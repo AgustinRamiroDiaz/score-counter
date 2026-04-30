@@ -166,7 +166,7 @@ self.onmessage = async (e: MessageEvent<LLMWorkerInput & { modelId?: string }>) 
       await generate(
         e.data.messages,
         e.data.gameContext,
-        e.data.modelId ?? 'HuggingFaceTB/SmolLM3-3B',
+        e.data.modelId ?? 'HuggingFaceTB/SmolLM3-3B-ONNX',
       );
     } catch (err) {
       self.postMessage({ type: 'error', message: String(err) } satisfies LLMWorkerOutput);

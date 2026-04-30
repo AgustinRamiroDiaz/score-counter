@@ -14,7 +14,7 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       sttModel: 'openai/whisper-base',
-      llmModel: 'HuggingFaceTB/SmolLM3-3B',
+      llmModel: 'HuggingFaceTB/SmolLM3-3B-ONNX',
       setSTTModel: (sttModel) => set({ sttModel }),
       setLLMModel: (llmModel) => set({ llmModel }),
     }),
