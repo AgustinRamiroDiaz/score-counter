@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { LLMWorkerOutput, ChatMessage, GameContext } from '@/lib/types';
 import { useSettingsStore } from '@/lib/store/settingsStore';
+import { useModelDownloadStore } from '@/lib/store/modelDownloadStore';
 
 export interface LLMStatus {
   loading: boolean;
@@ -14,6 +15,7 @@ export function useLLM() {
   const workerRef = useRef<Worker | null>(null);
   const [llmStatus, setLLMStatus] = useState<LLMStatus>({ loading: false, status: 'idle' });
   const llmModel = useSettingsStore((s) => s.llmModel);
+  const { showDialog, hideDialog, updateStatus } = useModelDownloadStore();
 
   useEffect(() => {
     const worker = new Worker(new URL('../workers/llm.worker.ts', import.meta.url));
@@ -35,7 +37,22 @@ export function useLLM() {
       const worker = workerRef.current;
       if (!worker) return;
 
-      setLLMStatus({ loading: true, status: 'Generating…' });
+      const startDownload = () => {
+        worker.postMessage({ type: 'generate', messages, gameContext, modelId: llmModel });
+      };
+
+      const cancelDownload = () => {
+        worker.postMessage({ type: 'abort' });
+        hideDialog();
+        setLLMStatus({ loading: false, status: 'idle' });
+      };
+
+      showDialog({
+        modelId: llmModel,
+        modelType: 'llm',
+        confirmDownload: startDownload,
+        cancelDownload,
+      });
 
       worker.onmessage = (e: MessageEvent<LLMWorkerOutput>) => {
         const msg = e.data;
@@ -45,18 +62,18 @@ export function useLLM() {
           callbacks.onToolCall(msg.name, msg.args);
         } else if (msg.type === 'done') {
           setLLMStatus({ loading: false, status: 'ready' });
+          hideDialog();
           callbacks.onDone();
         } else if (msg.type === 'status') {
           setLLMStatus({ loading: true, status: msg.message, progress: msg.progress });
+          updateStatus(msg.message, msg.progress);
         } else if (msg.type === 'error') {
           setLLMStatus({ loading: false, status: 'error' });
-          callbacks.onError(msg.message);
+          updateStatus('error');
         }
       };
-
-      worker.postMessage({ type: 'generate', messages, gameContext, modelId: llmModel });
     },
-    [llmModel],
+    [llmModel, showDialog, hideDialog, updateStatus],
   );
 
   return { generate, llmStatus };

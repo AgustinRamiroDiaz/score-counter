@@ -4,6 +4,7 @@ import './globals.css';
 import { ChatProvider } from '@/context/ChatContext';
 import { GlobalChatDrawer } from '@/components/chat/GlobalChatDrawer';
 import { FloatingChatButton } from '@/components/chat/FloatingChatButton';
+import { ModelDownloadDialogWrapper } from '@/components/ModelDownloadDialogWrapper';
 
 const syne = Syne({
   subsets: ['latin'],
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
           <GlobalChatDrawer />
           <FloatingChatButton />
+          <ModelDownloadDialogWrapper />
         </ChatProvider>
       </body>
     </html>
