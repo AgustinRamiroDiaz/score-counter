@@ -1,23 +1,21 @@
 import type { LLMWorkerInput, LLMWorkerOutput, ChatMessage, GameContext } from '@/lib/types';
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { TextGenerationPipeline } from '@huggingface/transformers';
 import { pipeline, TextStreamer, env } from '@huggingface/transformers';
 
 env.allowLocalModels = false;
 
-type TextGenPipeline = any;
-let generator: TextGenPipeline | null = null;
+let generator: TextGenerationPipeline | null = null;
 let loadedModel = '';
 
 async function loadModel(modelId: string) {
   if (generator && loadedModel === modelId) return;
   const post = (msg: LLMWorkerOutput) => self.postMessage(msg);
   post({ type: 'status', message: 'Downloading model…', progress: 0 });
-  generator = await (pipeline as any)('text-generation', modelId, {
+  generator = (await pipeline('text-generation', modelId, {
     progress_callback: (p: { progress?: number; status?: string }) => {
       post({ type: 'status', message: p.status ?? 'Loading…', progress: p.progress });
     },
-  });
+  })) as TextGenerationPipeline;
   loadedModel = modelId;
   post({ type: 'status', message: 'Model ready' });
 }
@@ -38,10 +36,7 @@ function buildSystemPrompt(ctx: GameContext): string {
     {
       name: 'update_round',
       description: 'Correct scores for a specific round by round number.',
-      parameters: {
-        round_number: 'integer (1-based)',
-        scores: 'object mapping player name to number',
-      },
+      parameters: { round_number: 'integer (1-based)', scores: 'object mapping player name to number' },
     },
     {
       name: 'undo_last_round',
@@ -56,11 +51,7 @@ function buildSystemPrompt(ctx: GameContext): string {
     {
       name: 'update_player',
       description: 'Rename a player or change their aliases.',
-      parameters: {
-        target: 'current player name or alias',
-        name: 'optional new name',
-        aliases: 'optional array of new aliases',
-      },
+      parameters: { target: 'current player name or alias', name: 'optional new name', aliases: 'optional array of new aliases' },
     },
     {
       name: 'navigate',
@@ -90,9 +81,18 @@ function parseToolCall(text: string): { name: string; args: Record<string, unkno
   const trimmed = text.trim();
   if (!trimmed.startsWith('{')) return null;
   try {
-    const parsed = JSON.parse(trimmed);
-    if (parsed.tool && typeof parsed.tool === 'string') {
-      return { name: parsed.tool, args: parsed.args ?? {} };
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      'tool' in parsed &&
+      typeof (parsed as Record<string, unknown>).tool === 'string'
+    ) {
+      const p = parsed as Record<string, unknown>;
+      return {
+        name: p.tool as string,
+        args: (p.args as Record<string, unknown>) ?? {},
+      };
     }
   } catch {
     // not a tool call
@@ -107,6 +107,7 @@ async function generate(
 ) {
   const post = (msg: LLMWorkerOutput) => self.postMessage(msg);
   await loadModel(modelId);
+  if (!generator) throw new Error('Model not loaded');
 
   const systemPrompt = buildSystemPrompt(ctx);
   const formattedMessages = [
@@ -124,7 +125,7 @@ async function generate(
     },
   });
 
-  await (generator as TextGenPipeline)(formattedMessages, {
+  await generator(formattedMessages as Parameters<typeof generator>[0], {
     max_new_tokens: 512,
     temperature: 0.3,
     do_sample: true,

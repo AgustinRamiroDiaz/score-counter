@@ -29,7 +29,6 @@ export function Leaderboard({ gameId }: Props) {
   }
 
   const podium = leaderboard.slice(0, 3);
-  const rest = leaderboard.slice(3);
 
   return (
     <div className="flex flex-col gap-4 p-4">

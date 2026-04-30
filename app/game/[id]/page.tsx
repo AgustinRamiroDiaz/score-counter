@@ -115,6 +115,7 @@ export default function ScoringPage({ params }: Props) {
       </Button>
 
       <RoundSheet
+        key={sheetOpen ? 'open' : 'closed'}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
         players={game.players}

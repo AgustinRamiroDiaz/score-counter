@@ -86,6 +86,7 @@ export function PointsTable({ gameId }: Props) {
 
       {editingRound && (
         <RoundSheet
+          key={editingRound.id}
           open={!!editingRound}
           onOpenChange={(open) => !open && setEditingRound(null)}
           players={game.players}

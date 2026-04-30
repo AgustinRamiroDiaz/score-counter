@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Sheet,
   SheetContent,
@@ -23,6 +23,14 @@ interface Props {
   onConfirm: (scores: Record<string, number>) => void;
 }
 
+function buildInitialScores(players: Player[], existingRound?: Round): Record<string, string> {
+  const initial: Record<string, string> = {};
+  for (const p of players) {
+    initial[p.id] = existingRound ? String(existingRound.scores[p.id] ?? 0) : '';
+  }
+  return initial;
+}
+
 export function RoundSheet({
   open,
   onOpenChange,
@@ -31,17 +39,11 @@ export function RoundSheet({
   existingRound,
   onConfirm,
 }: Props) {
-  const [scores, setScores] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (open) {
-      const initial: Record<string, string> = {};
-      for (const p of players) {
-        initial[p.id] = existingRound ? String(existingRound.scores[p.id] ?? 0) : '';
-      }
-      setScores(initial);
-    }
-  }, [open, players, existingRound]);
+  // State is initialised once per mount. Callers must pass a changing `key`
+  // prop to reset the form (e.g. key={editingRound?.id ?? 'new'}).
+  const [scores, setScores] = useState<Record<string, string>>(() =>
+    buildInitialScores(players, existingRound),
+  );
 
   const allFilled = players.every((p) => scores[p.id]?.trim() !== '');
   const allValid = players.every((p) => !isNaN(Number(scores[p.id])));

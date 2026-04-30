@@ -37,7 +37,7 @@ export function RoundChart({ gameId }: Props) {
     if (!game || game.rounds.length === 0) return [];
     return game.rounds.map((round) => {
       const point: Record<string, number | string> = { round: `R${round.number}` };
-      let cumulative: Record<string, number> = {};
+      const cumulative: Record<string, number> = {};
       // sum up to this round
       for (let i = 0; i <= game.rounds.indexOf(round); i++) {
         for (const p of game.players) {
@@ -113,10 +113,9 @@ export function RoundChart({ gameId }: Props) {
                 borderRadius: '8px',
                 fontSize: 12,
               }}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            formatter={(value: any, name: any) => {
-                const player = game.players.find((p) => p.id === String(name));
-                return [value ?? 0, player?.name ?? String(name)];
+            formatter={(value, name) => {
+                const player = game.players.find((p) => p.id === String(name ?? ''));
+                return [Number(value ?? 0), player?.name ?? String(name ?? '')];
               }}
             />
             {game.players.map((p, i) => (

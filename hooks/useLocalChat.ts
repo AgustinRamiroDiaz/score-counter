@@ -16,10 +16,6 @@ export function useLocalChat(game: Game | undefined) {
   const store = useGameStore();
   const { generate, llmStatus } = useLLM();
 
-  const appendMessage = useCallback((msg: ChatMessage) => {
-    setMessages((prev) => [...prev, msg]);
-  }, []);
-
   const updateLastAssistant = useCallback((delta: string) => {
     setMessages((prev) => {
       const last = prev[prev.length - 1];
