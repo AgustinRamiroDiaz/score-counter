@@ -1,0 +1,153 @@
+import type { LLMWorkerInput, LLMWorkerOutput, ChatMessage, GameContext } from '@/lib/types';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { pipeline, TextStreamer, env } from '@huggingface/transformers';
+
+env.allowLocalModels = false;
+
+type TextGenPipeline = any;
+let generator: TextGenPipeline | null = null;
+let loadedModel = '';
+
+async function loadModel(modelId: string) {
+  if (generator && loadedModel === modelId) return;
+  const post = (msg: LLMWorkerOutput) => self.postMessage(msg);
+  post({ type: 'status', message: 'Downloading model…', progress: 0 });
+  generator = await (pipeline as any)('text-generation', modelId, {
+    progress_callback: (p: { progress?: number; status?: string }) => {
+      post({ type: 'status', message: p.status ?? 'Loading…', progress: p.progress });
+    },
+  });
+  loadedModel = modelId;
+  post({ type: 'status', message: 'Model ready' });
+}
+
+function buildSystemPrompt(ctx: GameContext): string {
+  const playerList = ctx.players
+    .map((p) => `- ${p.name}${p.aliases.length ? ` (also known as: ${p.aliases.join(', ')})` : ''}`)
+    .join('\n');
+
+  const tools = [
+    {
+      name: 'add_round',
+      description: 'Record scores for ALL players for a new round. Must include every player.',
+      parameters: {
+        scores: 'object mapping player name to number (e.g. {"Alice": 10, "Bob": 5})',
+      },
+    },
+    {
+      name: 'update_round',
+      description: 'Correct scores for a specific round by round number.',
+      parameters: {
+        round_number: 'integer (1-based)',
+        scores: 'object mapping player name to number',
+      },
+    },
+    {
+      name: 'undo_last_round',
+      description: 'Remove the most recently recorded round.',
+      parameters: {},
+    },
+    {
+      name: 'get_leaderboard',
+      description: 'Return the current standings.',
+      parameters: {},
+    },
+    {
+      name: 'update_player',
+      description: 'Rename a player or change their aliases.',
+      parameters: {
+        target: 'current player name or alias',
+        name: 'optional new name',
+        aliases: 'optional array of new aliases',
+      },
+    },
+    {
+      name: 'navigate',
+      description: 'Switch the active view.',
+      parameters: { view: 'one of: scoring, leaderboard, chart, table' },
+    },
+  ];
+
+  return `You are a scoring assistant for "${ctx.gameName}".
+
+Players:
+${playerList}
+
+Total rounds played: ${ctx.rounds.length}
+
+You have access to these tools. When you need to call one, respond ONLY with valid JSON in this exact format and nothing else:
+{"tool": "tool_name", "args": {...}}
+
+Available tools:
+${JSON.stringify(tools, null, 2)}
+
+If no tool is needed, respond conversationally.
+IMPORTANT: For add_round, you MUST include a score for every player listed above. If the user didn't provide all scores, ask for the missing ones before calling the tool.`;
+}
+
+function parseToolCall(text: string): { name: string; args: Record<string, unknown> } | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed.tool && typeof parsed.tool === 'string') {
+      return { name: parsed.tool, args: parsed.args ?? {} };
+    }
+  } catch {
+    // not a tool call
+  }
+  return null;
+}
+
+async function generate(
+  messages: ChatMessage[],
+  ctx: GameContext,
+  modelId: string,
+) {
+  const post = (msg: LLMWorkerOutput) => self.postMessage(msg);
+  await loadModel(modelId);
+
+  const systemPrompt = buildSystemPrompt(ctx);
+  const formattedMessages = [
+    { role: 'system', content: systemPrompt },
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+  ];
+
+  let fullResponse = '';
+  const streamer = new TextStreamer(generator.tokenizer, {
+    skip_prompt: true,
+    skip_special_tokens: true,
+    callback_function: (text: string) => {
+      fullResponse += text;
+      post({ type: 'delta', content: text });
+    },
+  });
+
+  await (generator as TextGenPipeline)(formattedMessages, {
+    max_new_tokens: 512,
+    temperature: 0.3,
+    do_sample: true,
+    streamer,
+  });
+
+  const toolCall = parseToolCall(fullResponse.trim());
+  if (toolCall) {
+    post({ type: 'tool_call', name: toolCall.name, args: toolCall.args });
+  }
+
+  post({ type: 'done' });
+}
+
+self.onmessage = async (e: MessageEvent<LLMWorkerInput & { modelId?: string }>) => {
+  const { type } = e.data;
+  if (type === 'generate') {
+    try {
+      await generate(e.data.messages, e.data.gameContext, e.data.modelId ?? 'HuggingFaceTB/SmolLM3-3B');
+    } catch (err) {
+      self.postMessage({ type: 'error', message: String(err) } satisfies LLMWorkerOutput);
+    }
+  }
+};
+
+export {};
