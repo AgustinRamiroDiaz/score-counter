@@ -1,8 +1,23 @@
 import type { Metadata, Viewport } from 'next';
-import { Geist } from 'next/font/google';
+import { Bebas_Neue, Syne } from 'next/font/google';
 import './globals.css';
+import { ChatProvider } from '@/context/ChatContext';
+import { GlobalChatDrawer } from '@/components/chat/GlobalChatDrawer';
+import { FloatingChatButton } from '@/components/chat/FloatingChatButton';
 
-const geist = Geist({ subsets: ['latin'], variable: '--font-geist-sans' });
+const syne = Syne({
+  subsets: ['latin'],
+  variable: '--font-syne',
+  weight: ['400', '600', '700', '800'],
+  display: 'swap',
+});
+
+const bebas = Bebas_Neue({
+  subsets: ['latin'],
+  variable: '--font-bebas',
+  weight: '400',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Score Counter',
@@ -13,13 +28,19 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
-  themeColor: '#09090b',
+  themeColor: '#100c08',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={geist.variable}>
-      <body className="min-h-dvh bg-background text-foreground antialiased">{children}</body>
+    <html lang="en" className={`${syne.variable} ${bebas.variable}`}>
+      <body className="min-h-dvh bg-background text-foreground antialiased">
+        <ChatProvider>
+          {children}
+          <GlobalChatDrawer />
+          <FloatingChatButton />
+        </ChatProvider>
+      </body>
     </html>
   );
 }

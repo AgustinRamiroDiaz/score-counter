@@ -7,7 +7,7 @@ export interface Player {
 export interface Round {
   id: string;
   number: number;
-  scores: Record<string, number>; // playerId → points
+  scores: Record<string, number>;
 }
 
 export interface Game {
@@ -30,6 +30,21 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface GameSummary {
+  id: string;
+  name: string;
+  playerCount: number;
+  roundCount: number;
+}
+
+export interface GameContext {
+  mode: 'home' | 'game';
+  gameName?: string;
+  players?: Pick<Player, 'id' | 'name' | 'aliases'>[];
+  rounds?: Round[];
+  availableGames: GameSummary[];
+}
+
 // Worker message types
 export type LLMWorkerInput =
   | { type: 'generate'; messages: ChatMessage[]; gameContext: GameContext }
@@ -50,9 +65,3 @@ export type STTWorkerOutput =
   | { type: 'transcript'; text: string }
   | { type: 'status'; message: string; progress?: number }
   | { type: 'error'; message: string };
-
-export interface GameContext {
-  gameName: string;
-  players: Pick<Player, 'id' | 'name' | 'aliases'>[];
-  rounds: Round[];
-}

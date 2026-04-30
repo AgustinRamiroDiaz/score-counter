@@ -1,9 +1,7 @@
 'use client';
 
-import { use } from 'react';
-import { useGame } from '@/hooks/useGame';
-import { useLocalChat } from '@/hooks/useLocalChat';
-import { ChatPanel } from '@/components/chat/ChatPanel';
+import { use, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -11,17 +9,11 @@ interface Props {
 
 export default function ChatPage({ params }: Props) {
   const { id } = use(params);
-  const { game } = useGame(id);
-  const { messages, sendMessage, isGenerating } = useLocalChat(game);
+  const router = useRouter();
 
-  return (
-    <div className="flex flex-col h-[calc(100dvh-56px-57px)]">
-      <ChatPanel
-        messages={messages}
-        onSend={sendMessage}
-        isGenerating={isGenerating}
-        gameActive={!!game}
-      />
-    </div>
-  );
+  useEffect(() => {
+    router.replace(`/game/${id}`);
+  }, [id, router]);
+
+  return null;
 }

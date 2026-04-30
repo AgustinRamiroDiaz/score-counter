@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Loader2 } from 'lucide-react';
 import { useSTT } from '@/lib/ai/useSTT';
@@ -20,28 +20,27 @@ export function MicButton({ onTranscript, disabled }: Props) {
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
       chunksRef.current = [];
 
-      mediaRecorder.ondataavailable = (e) => {
+      recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
 
-      mediaRecorder.onstop = async () => {
+      recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
         const arrayBuffer = await blob.arrayBuffer();
         const audioCtx = new AudioContext({ sampleRate: 16000 });
         const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        const floatData = audioBuffer.getChannelData(0);
-        transcribe(floatData, audioBuffer.sampleRate, {
+        transcribe(audioBuffer.getChannelData(0), audioBuffer.sampleRate, {
           onTranscript,
           onError: (msg) => console.error('STT error:', msg),
         });
       };
 
-      mediaRecorder.start();
+      recorder.start();
       setRecording(true);
     } catch (err) {
       console.error('Mic access denied:', err);
@@ -53,16 +52,20 @@ export function MicButton({ onTranscript, disabled }: Props) {
     setRecording(false);
   }, []);
 
-  const toggle = recording ? stopRecording : startRecording;
   const isLoading = sttStatus.loading;
 
   return (
     <Button
       type="button"
-      variant={recording ? 'destructive' : 'outline'}
+      variant="ghost"
       size="icon"
-      className={cn('h-11 w-11 shrink-0 transition-all', recording && 'animate-pulse')}
-      onClick={toggle}
+      className={cn(
+        'h-10 w-10 shrink-0 rounded-xl transition-all',
+        recording
+          ? 'bg-destructive/20 text-destructive animate-pulse'
+          : 'text-muted-foreground hover:text-ai hover:bg-ai/10',
+      )}
+      onClick={recording ? stopRecording : startRecording}
       disabled={disabled || isLoading}
       aria-label={recording ? 'Stop recording' : 'Start voice input'}
     >

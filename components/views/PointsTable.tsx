@@ -21,7 +21,7 @@ export function PointsTable({ gameId }: Props) {
   if (game.rounds.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-        <p className="text-4xl mb-3">📋</p>
+        <p className="text-5xl mb-4">📋</p>
         <p className="text-sm">No rounds recorded yet.</p>
       </div>
     );
@@ -32,20 +32,20 @@ export function PointsTable({ gameId }: Props) {
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm border-collapse">
           <thead>
-            <tr className="bg-muted/50">
-              <th className="sticky left-0 z-10 bg-muted/80 backdrop-blur px-3 py-2 text-left font-semibold whitespace-nowrap border-r">
+            <tr>
+              <th className="sticky left-0 z-10 bg-card px-3 py-2.5 text-left font-semibold whitespace-nowrap border-r border-border text-muted-foreground text-xs uppercase tracking-wider">
                 Player
               </th>
               {game.rounds.map((r) => (
                 <th
                   key={r.id}
-                  className="px-3 py-2 text-center font-medium text-muted-foreground whitespace-nowrap cursor-pointer hover:bg-accent transition-colors"
+                  className="px-3 py-2.5 text-center font-medium text-muted-foreground whitespace-nowrap cursor-pointer hover:text-foreground hover:bg-white/5 transition-colors text-xs uppercase tracking-wider"
                   onClick={() => setEditingRound(r)}
                 >
                   R{r.number}
                 </th>
               ))}
-              <th className="sticky right-0 z-10 bg-muted/80 backdrop-blur px-3 py-2 text-center font-bold whitespace-nowrap border-l">
+              <th className="sticky right-0 z-10 bg-card px-3 py-2.5 text-center font-bold whitespace-nowrap border-l border-border text-primary text-xs uppercase tracking-wider">
                 Total
               </th>
             </tr>
@@ -56,25 +56,28 @@ export function PointsTable({ gameId }: Props) {
               return (
                 <tr
                   key={player.id}
-                  className={cn('border-t', i % 2 === 0 ? 'bg-card' : 'bg-muted/20')}
+                  className={cn('border-t border-border', i % 2 === 0 ? 'bg-card' : 'bg-white/[0.02]')}
                 >
-                  <td className="sticky left-0 z-10 backdrop-blur px-3 py-2.5 font-medium whitespace-nowrap border-r bg-inherit">
+                  <td className="sticky left-0 z-10 backdrop-blur px-3 py-3 font-semibold whitespace-nowrap border-r border-border bg-inherit">
                     {player.name}
                   </td>
-                  {game.rounds.map((r) => (
-                    <td
-                      key={r.id}
-                      className={cn(
-                        'px-3 py-2.5 text-center tabular-nums cursor-pointer hover:bg-accent/50 transition-colors',
-                        (r.scores[player.id] ?? 0) > 0 && 'text-green-600 dark:text-green-400',
-                        (r.scores[player.id] ?? 0) < 0 && 'text-red-500',
-                      )}
-                      onClick={() => setEditingRound(r)}
-                    >
-                      {r.scores[player.id] ?? 0}
-                    </td>
-                  ))}
-                  <td className="sticky right-0 z-10 backdrop-blur px-3 py-2.5 text-center font-bold tabular-nums border-l bg-inherit">
+                  {game.rounds.map((r) => {
+                    const score = r.scores[player.id] ?? 0;
+                    return (
+                      <td
+                        key={r.id}
+                        className={cn(
+                          'px-3 py-3 text-center tabular-nums cursor-pointer hover:bg-white/5 transition-colors',
+                          score > 0 && 'text-primary/80',
+                          score < 0 && 'text-destructive',
+                        )}
+                        onClick={() => setEditingRound(r)}
+                      >
+                        {score > 0 ? `+${score}` : score}
+                      </td>
+                    );
+                  })}
+                  <td className="sticky right-0 z-10 backdrop-blur px-3 py-3 text-center font-display text-xl text-primary tabular-nums border-l border-border bg-inherit">
                     {total}
                   </td>
                 </tr>

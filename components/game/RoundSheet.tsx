@@ -59,13 +59,13 @@ export function RoundSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="rounded-t-2xl max-h-[90vh] overflow-y-auto">
+      <SheetContent side="bottom" className="rounded-t-2xl max-h-[90dvh] overflow-y-auto bg-card">
         <SheetHeader className="pb-4">
-          <SheetTitle>
-            {existingRound ? `Edit Round ${roundNumber}` : `Score Round ${roundNumber}`}
+          <SheetTitle className="font-display text-2xl tracking-wide">
+            {existingRound ? `EDIT ROUND ${roundNumber}` : `ROUND ${roundNumber}`}
           </SheetTitle>
           <SheetDescription>
-            Enter scores for all players. All fields are required.
+            {existingRound ? 'Update scores for all players.' : 'Enter scores for all players.'}
           </SheetDescription>
         </SheetHeader>
 
@@ -74,7 +74,7 @@ export function RoundSheet({
             <div key={player.id} className="flex items-center gap-3">
               <Label
                 htmlFor={`score-${player.id}`}
-                className="w-28 shrink-0 font-medium truncate"
+                className="w-28 shrink-0 font-semibold truncate"
               >
                 {player.name}
               </Label>
@@ -87,7 +87,7 @@ export function RoundSheet({
                 onChange={(e) =>
                   setScores((s) => ({ ...s, [player.id]: e.target.value }))
                 }
-                className="h-12 text-lg text-center"
+                className="h-12 text-lg text-center bg-secondary border-transparent focus-visible:border-primary/50"
               />
             </div>
           ))}
@@ -95,7 +95,7 @@ export function RoundSheet({
 
         <SheetFooter className="pt-4">
           <Button
-            className="w-full h-12 text-base"
+            className="w-full h-12 text-base font-semibold"
             disabled={!allFilled || !allValid}
             onClick={handleConfirm}
           >

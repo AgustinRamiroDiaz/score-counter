@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { X, Plus, UserPlus } from 'lucide-react';
+import { X, UserPlus } from 'lucide-react';
 import type { Player } from '@/lib/types';
 
 interface DraftPlayer {
@@ -60,9 +59,9 @@ export function PlayerForm({ onConfirm, initialPlayers = [], submitLabel = 'Cont
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         {players.map((p, i) => (
-          <div key={i} className="flex flex-col gap-1.5 rounded-lg border p-3 bg-card">
+          <div key={i} className="flex flex-col gap-1.5 rounded-xl border border-border p-3 bg-secondary/30">
             <div className="flex items-center gap-2">
               <div className="flex-1">
                 <Label htmlFor={`player-name-${i}`} className="text-xs text-muted-foreground mb-1 block">
@@ -73,14 +72,14 @@ export function PlayerForm({ onConfirm, initialPlayers = [], submitLabel = 'Cont
                   placeholder="Name"
                   value={p.name}
                   onChange={(e) => update(i, 'name', e.target.value)}
-                  className="h-11"
+                  className="h-11 bg-secondary border-transparent focus-visible:border-primary/50"
                 />
               </div>
               {players.length > 1 && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="mt-5 shrink-0 text-muted-foreground"
+                  className="mt-5 shrink-0 text-muted-foreground hover:text-destructive"
                   onClick={() => removePlayer(i)}
                 >
                   <X className="h-4 w-4" />
@@ -91,30 +90,20 @@ export function PlayerForm({ onConfirm, initialPlayers = [], submitLabel = 'Cont
               placeholder="Aliases (comma-separated, optional)"
               value={p.aliases}
               onChange={(e) => update(i, 'aliases', e.target.value)}
-              className="h-9 text-sm text-muted-foreground"
+              className="h-9 text-sm text-muted-foreground bg-secondary border-transparent focus-visible:border-primary/30"
             />
-            {p.aliases.trim() && (
-              <div className="flex flex-wrap gap-1">
-                {p.aliases.split(',').filter((a) => a.trim()).map((a, j) => (
-                  <Badge key={j} variant="secondary" className="text-xs">
-                    {a.trim()}
-                  </Badge>
-                ))}
-              </div>
-            )}
           </div>
         ))}
       </div>
 
-      <Button variant="outline" className="gap-2 h-11" onClick={addPlayer}>
+      <Button variant="outline" className="gap-2 h-11 border-border" onClick={addPlayer}>
         <UserPlus className="h-4 w-4" />
         Add player
       </Button>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <Button className="h-12 text-base" onClick={handleConfirm}>
-        <Plus className="h-4 w-4 mr-2" />
+      <Button className="h-12 text-base font-semibold" onClick={handleConfirm}>
         {submitLabel}
       </Button>
     </div>
