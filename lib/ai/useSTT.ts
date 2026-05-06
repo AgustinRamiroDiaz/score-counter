@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { STTWorkerOutput } from '@/lib/types';
 import { useSettingsStore } from '@/lib/store/settingsStore';
 import { useModelDownloadStore } from '@/lib/store/modelDownloadStore';
+import { isModelCached } from '@/lib/config/models';
 
 export interface STTStatus {
   loading: boolean;
@@ -24,7 +25,7 @@ export function useSTT() {
   }, []);
 
   const transcribe = useCallback(
-    (
+    async (
       audio: Float32Array,
       sampleRate: number,
       callbacks: {
@@ -45,12 +46,18 @@ export function useSTT() {
         setSTTStatus({ loading: false, status: 'idle' });
       };
 
-      showDialog({
-        modelId: sttModel,
-        modelType: 'stt',
-        confirmDownload: startDownload,
-        cancelDownload,
-      });
+      const cached = await isModelCached(sttModel);
+
+      if (cached) {
+        startDownload();
+      } else {
+        showDialog({
+          modelId: sttModel,
+          modelType: 'stt',
+          confirmDownload: startDownload,
+          cancelDownload,
+        });
+      }
 
       worker.onmessage = (e: MessageEvent<STTWorkerOutput>) => {
         const msg = e.data;
@@ -70,5 +77,46 @@ export function useSTT() {
     [sttModel, showDialog, hideDialog, updateStatus],
   );
 
-  return { transcribe, sttStatus };
+  const load = useCallback(
+    (modelId: string, onDone?: () => void) => {
+      const worker = workerRef.current;
+      if (!worker) return;
+
+      const startDownload = () => {
+        worker.postMessage({ type: 'load', modelId });
+      };
+
+      const cancelDownload = () => {
+        worker.postMessage({ type: 'abort' });
+        hideDialog();
+        setSTTStatus({ loading: false, status: 'idle' });
+      };
+
+      showDialog({
+        modelId,
+        modelType: 'stt',
+        confirmDownload: startDownload,
+        cancelDownload,
+      });
+
+      worker.onmessage = (e: MessageEvent<STTWorkerOutput>) => {
+        const msg = e.data;
+        if (msg.type === 'status') {
+          setSTTStatus({ loading: true, status: msg.message, progress: msg.progress });
+          updateStatus(msg.message, msg.progress);
+          if (msg.message === 'STT model ready') {
+            setSTTStatus({ loading: false, status: 'ready' });
+            hideDialog();
+            onDone?.();
+          }
+        } else if (msg.type === 'error') {
+          setSTTStatus({ loading: false, status: 'error' });
+          updateStatus('error');
+        }
+      };
+    },
+    [showDialog, hideDialog, updateStatus],
+  );
+
+  return { transcribe, load, sttStatus };
 }

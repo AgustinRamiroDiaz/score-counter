@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { LLMWorkerOutput, ChatMessage, GameContext } from '@/lib/types';
 import { useSettingsStore } from '@/lib/store/settingsStore';
 import { useModelDownloadStore } from '@/lib/store/modelDownloadStore';
+import { isModelCached } from '@/lib/config/models';
 
 export interface LLMStatus {
   loading: boolean;
@@ -24,7 +25,7 @@ export function useLLM() {
   }, []);
 
   const generate = useCallback(
-    (
+    async (
       messages: ChatMessage[],
       gameContext: GameContext,
       callbacks: {
@@ -47,12 +48,18 @@ export function useLLM() {
         setLLMStatus({ loading: false, status: 'idle' });
       };
 
-      showDialog({
-        modelId: llmModel,
-        modelType: 'llm',
-        confirmDownload: startDownload,
-        cancelDownload,
-      });
+      const cached = await isModelCached(llmModel);
+
+      if (cached) {
+        startDownload();
+      } else {
+        showDialog({
+          modelId: llmModel,
+          modelType: 'llm',
+          confirmDownload: startDownload,
+          cancelDownload,
+        });
+      }
 
       worker.onmessage = (e: MessageEvent<LLMWorkerOutput>) => {
         const msg = e.data;
@@ -76,5 +83,46 @@ export function useLLM() {
     [llmModel, showDialog, hideDialog, updateStatus],
   );
 
-  return { generate, llmStatus };
+  const load = useCallback(
+    (modelId: string, onDone?: () => void) => {
+      const worker = workerRef.current;
+      if (!worker) return;
+
+      const startDownload = () => {
+        worker.postMessage({ type: 'load', modelId });
+      };
+
+      const cancelDownload = () => {
+        worker.postMessage({ type: 'abort' });
+        hideDialog();
+        setLLMStatus({ loading: false, status: 'idle' });
+      };
+
+      showDialog({
+        modelId,
+        modelType: 'llm',
+        confirmDownload: startDownload,
+        cancelDownload,
+      });
+
+      worker.onmessage = (e: MessageEvent<LLMWorkerOutput>) => {
+        const msg = e.data;
+        if (msg.type === 'status') {
+          setLLMStatus({ loading: true, status: msg.message, progress: msg.progress });
+          updateStatus(msg.message, msg.progress);
+          if (msg.message === 'Model ready') {
+            setLLMStatus({ loading: false, status: 'ready' });
+            hideDialog();
+            onDone?.();
+          }
+        } else if (msg.type === 'error') {
+          setLLMStatus({ loading: false, status: 'error' });
+          updateStatus('error');
+        }
+      };
+    },
+    [showDialog, hideDialog, updateStatus],
+  );
+
+  return { generate, load, llmStatus };
 }

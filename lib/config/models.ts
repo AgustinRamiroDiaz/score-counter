@@ -79,3 +79,21 @@ export function getModelPreset(id: string, type: 'llm' | 'stt'): ModelPreset | u
   const list = type === 'llm' ? LLM_MODELS : STT_MODELS;
   return list.find((m) => m.id === id);
 }
+
+/**
+ * Checks if a model is cached in the browser's 'transformers-cache'.
+ * This checks for the existence of the model's config.json.
+ */
+export async function isModelCached(modelId: string): Promise<boolean> {
+  if (typeof window === 'undefined' || !('caches' in window)) return false;
+  try {
+    const cache = await caches.open('transformers-cache');
+    const keys = await cache.keys();
+    // Transformers.js saves files with URLs like 'https://huggingface.co/modelId/resolve/main/config.json'
+    // or simply contains the modelId in the request URL.
+    return keys.some((request) => request.url.includes(`${modelId}/`));
+  } catch (err) {
+    console.error('Failed to check model cache:', err);
+    return false;
+  }
+}

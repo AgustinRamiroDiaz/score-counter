@@ -10,7 +10,7 @@ let loadedModel = '';
 async function loadModel(modelId: string) {
   if (transcriber && loadedModel === modelId) return;
   const post = (msg: STTWorkerOutput) => self.postMessage(msg);
-  post({ type: 'status', message: 'Downloading STT model…', progress: 0 });
+  post({ type: 'status', message: 'Loading STT model…', progress: 0 });
   transcriber = (await pipeline('automatic-speech-recognition', modelId, {
     progress_callback: (p: { progress?: number; status?: string }) => {
       post({ type: 'status', message: p.status ?? 'Loading…', progress: p.progress });
@@ -36,11 +36,17 @@ async function transcribe(audio: Float32Array, sampleRate: number, modelId: stri
   post({ type: 'transcript', text: text.trim() });
 }
 
-self.onmessage = async (e: MessageEvent<STTWorkerInput & { modelId?: string }>) => {
+self.onmessage = async (e: MessageEvent<STTWorkerInput>) => {
   const { type } = e.data;
   if (type === 'transcribe') {
     try {
       await transcribe(e.data.audio, e.data.sampleRate, e.data.modelId ?? 'openai/whisper-base');
+    } catch (err) {
+      self.postMessage({ type: 'error', message: String(err) } satisfies STTWorkerOutput);
+    }
+  } else if (type === 'load') {
+    try {
+      await loadModel(e.data.modelId);
     } catch (err) {
       self.postMessage({ type: 'error', message: String(err) } satisfies STTWorkerOutput);
     }

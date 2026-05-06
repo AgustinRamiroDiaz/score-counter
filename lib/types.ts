@@ -47,7 +47,8 @@ export interface GameContext {
 
 // Worker message types
 export type LLMWorkerInput =
-  | { type: 'generate'; messages: ChatMessage[]; gameContext: GameContext }
+  | { type: 'generate'; messages: ChatMessage[]; gameContext: GameContext; modelId?: string }
+  | { type: 'load'; modelId: string }
   | { type: 'abort' };
 
 export type LLMWorkerOutput =
@@ -58,7 +59,8 @@ export type LLMWorkerOutput =
   | { type: 'error'; message: string };
 
 export type STTWorkerInput =
-  | { type: 'transcribe'; audio: Float32Array; sampleRate: number }
+  | { type: 'transcribe'; audio: Float32Array; sampleRate: number; modelId?: string }
+  | { type: 'load'; modelId: string }
   | { type: 'abort' };
 
 export type STTWorkerOutput =

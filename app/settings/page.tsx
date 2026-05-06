@@ -1,12 +1,16 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useEffect, useState, useCallback } from 'react';
 import { useSettingsStore } from '@/lib/store/settingsStore';
-import { LLM_MODELS, STT_MODELS, getModelPreset } from '@/lib/config/models';
+import { LLM_MODELS, STT_MODELS, getModelPreset, isModelCached } from '@/lib/config/models';
+import { useLLM } from '@/lib/ai/useLLM';
+import { useSTT } from '@/lib/ai/useSTT';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Bot, Mic, HardDrive, Info } from 'lucide-react';
+import { ArrowLeft, Bot, Mic, HardDrive, Info, CheckCircle2, Download } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -14,11 +18,54 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+
 export default function SettingsPage() {
   const router = useRouter();
   const { sttModel, llmModel, setSTTModel, setLLMModel } = useSettingsStore();
+  const { load: loadLLM } = useLLM();
+  const { load: loadSTT } = useSTT();
+
+  const [cachedModels, setCachedModels] = useState<Record<string, boolean>>({});
+
+  const refreshCacheStatus = useCallback(async () => {
+    const status: Record<string, boolean> = {};
+    const allModels = [...LLM_MODELS, ...STT_MODELS];
+    await Promise.all(
+      allModels.map(async (m) => {
+        status[m.id] = await isModelCached(m.id);
+      }),
+    );
+    setCachedModels(status);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function check() {
+      const status: Record<string, boolean> = {};
+      const allModels = [...LLM_MODELS, ...STT_MODELS];
+      await Promise.all(
+        allModels.map(async (m) => {
+          status[m.id] = await isModelCached(m.id);
+        }),
+      );
+      if (mounted) {
+        setCachedModels(status);
+      }
+    }
+
+    check();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const llmPreset = getModelPreset(llmModel, 'llm');
   const sttPreset = getModelPreset(sttModel, 'stt');
+
+  const isLLMCached = cachedModels[llmModel];
+  const isSTTCached = cachedModels[sttModel];
 
   return (
     <div className="min-h-dvh flex flex-col max-w-lg mx-auto">
@@ -35,7 +82,7 @@ export default function SettingsPage() {
             AI Models
           </p>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             <Label htmlFor="llm-model" className="flex items-center gap-2">
               <Bot className="h-3.5 w-3.5 text-ai" />
               Language Model
@@ -48,7 +95,12 @@ export default function SettingsPage() {
                 {LLM_MODELS.map((m) => (
                   <SelectItem key={m.id} value={m.id}>
                     <div className="flex items-center justify-between w-full gap-4">
-                      <span>{m.label}</span>
+                      <div className="flex items-center gap-2">
+                        <span>{m.label}</span>
+                        {cachedModels[m.id] && (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                        )}
+                      </div>
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <HardDrive className="h-3 w-3" />
                         {m.size}
@@ -58,17 +110,37 @@ export default function SettingsPage() {
                 ))}
               </SelectContent>
             </Select>
-            {llmPreset && (
-              <p className="text-xs text-muted-foreground flex items-start gap-1.5">
-                <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                {llmPreset.description}
-              </p>
-            )}
+            <div className="flex flex-col gap-2">
+              {llmPreset && (
+                <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+                  <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                  {llmPreset.description}
+                </p>
+              )}
+              <div className="flex items-center justify-between pt-1">
+                {isLLMCached ? (
+                  <Badge variant="outline" className="text-green-600 bg-green-50 border-green-200 gap-1 py-1">
+                    <CheckCircle2 className="h-3 w-3" />
+                    Downloaded
+                  </Badge>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs"
+                    onClick={() => loadLLM(llmModel, refreshCacheStatus)}
+                  >
+                    <Download className="h-3 w-3" />
+                    Download Now
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
 
           <Separator />
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             <Label htmlFor="stt-model" className="flex items-center gap-2">
               <Mic className="h-3.5 w-3.5 text-ai" />
               Speech-to-Text Model
@@ -81,7 +153,12 @@ export default function SettingsPage() {
                 {STT_MODELS.map((m) => (
                   <SelectItem key={m.id} value={m.id}>
                     <div className="flex items-center justify-between w-full gap-4">
-                      <span>{m.label}</span>
+                      <div className="flex items-center gap-2">
+                        <span>{m.label}</span>
+                        {cachedModels[m.id] && (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                        )}
+                      </div>
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <HardDrive className="h-3 w-3" />
                         {m.size}
@@ -91,15 +168,35 @@ export default function SettingsPage() {
                 ))}
               </SelectContent>
             </Select>
-            {sttPreset && (
-              <p className="text-xs text-muted-foreground flex items-start gap-1.5">
-                <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                {sttPreset.description}
-              </p>
-            )}
+            <div className="flex flex-col gap-2">
+              {sttPreset && (
+                <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+                  <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                  {sttPreset.description}
+                </p>
+              )}
+              <div className="flex items-center justify-between pt-1">
+                {isSTTCached ? (
+                  <Badge variant="outline" className="text-green-600 bg-green-50 border-green-200 gap-1 py-1">
+                    <CheckCircle2 className="h-3 w-3" />
+                    Downloaded
+                  </Badge>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs"
+                    onClick={() => loadSTT(sttModel, refreshCacheStatus)}
+                  >
+                    <Download className="h-3 w-3" />
+                    Download Now
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="text-xs text-muted-foreground bg-secondary/50 rounded-xl p-3 leading-relaxed">
+          <div className="text-xs text-muted-foreground bg-secondary/50 rounded-xl p-3 leading-relaxed mt-2">
             Models download on first use and cache in your browser. Downloads can be 75 MB – 3.2 GB
             depending on model. You will see a progress dialog during download.
           </div>

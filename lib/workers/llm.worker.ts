@@ -10,7 +10,7 @@ let loadedModel = '';
 async function loadModel(modelId: string) {
   if (generator && loadedModel === modelId) return;
   const post = (msg: LLMWorkerOutput) => self.postMessage(msg);
-  post({ type: 'status', message: 'Downloading model…', progress: 0 });
+  post({ type: 'status', message: 'Loading model…', progress: 0 });
   generator = (await pipeline('text-generation', modelId, {
     progress_callback: (p: { progress?: number; status?: string }) => {
       post({ type: 'status', message: p.status ?? 'Loading…', progress: p.progress });
@@ -160,14 +160,21 @@ async function generate(messages: ChatMessage[], ctx: GameContext, modelId: stri
   post({ type: 'done' });
 }
 
-self.onmessage = async (e: MessageEvent<LLMWorkerInput & { modelId?: string }>) => {
-  if (e.data.type === 'generate') {
+self.onmessage = async (e: MessageEvent<LLMWorkerInput>) => {
+  const { type } = e.data;
+  if (type === 'generate') {
     try {
       await generate(
         e.data.messages,
         e.data.gameContext,
         e.data.modelId ?? 'HuggingFaceTB/SmolLM3-3B-ONNX',
       );
+    } catch (err) {
+      self.postMessage({ type: 'error', message: String(err) } satisfies LLMWorkerOutput);
+    }
+  } else if (type === 'load') {
+    try {
+      await loadModel(e.data.modelId);
     } catch (err) {
       self.postMessage({ type: 'error', message: String(err) } satisfies LLMWorkerOutput);
     }
