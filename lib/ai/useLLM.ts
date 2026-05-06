@@ -1,10 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import type { LLMWorkerOutput, ChatMessage, GameContext } from '@/lib/types';
-import { useSettingsStore } from '@/lib/store/settingsStore';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useModelDownloadStore } from '@/lib/store/modelDownloadStore';
-import { isModelCached } from '@/lib/config/models';
 
 export interface LLMStatus {
   loading: boolean;
@@ -12,10 +9,20 @@ export interface LLMStatus {
   progress?: number;
 }
 
+type BrowserAIWorkerMessage =
+  | { status: 'loading'; data?: string; progress?: number }
+  | { status: 'ready' }
+  | { status: 'error'; data?: string }
+  | { status: 'progress'; progress?: number; file?: string };
+
+function progressPercent(progress: number | undefined): number | undefined {
+  if (progress === undefined) return undefined;
+  return progress <= 1 ? Math.round(progress * 100) : Math.round(progress);
+}
+
 export function useLLM() {
   const workerRef = useRef<Worker | null>(null);
   const [llmStatus, setLLMStatus] = useState<LLMStatus>({ loading: false, status: 'idle' });
-  const llmModel = useSettingsStore((s) => s.llmModel);
   const { showDialog, hideDialog, updateStatus } = useModelDownloadStore();
 
   useEffect(() => {
@@ -24,76 +31,25 @@ export function useLLM() {
     return () => worker.terminate();
   }, []);
 
-  const generate = useCallback(
-    async (
-      messages: ChatMessage[],
-      gameContext: GameContext,
-      callbacks: {
-        onDelta: (text: string) => void;
-        onToolCall: (name: string, args: Record<string, unknown>) => void;
-        onDone: () => void;
-        onError: (msg: string) => void;
-      },
-    ) => {
-      const worker = workerRef.current;
-      if (!worker) return;
-
-      const startDownload = () => {
-        worker.postMessage({ type: 'generate', messages, gameContext, modelId: llmModel });
-      };
-
-      const cancelDownload = () => {
-        worker.postMessage({ type: 'abort' });
-        hideDialog();
-        setLLMStatus({ loading: false, status: 'idle' });
-      };
-
-      const cached = await isModelCached(llmModel);
-
-      if (cached) {
-        startDownload();
-      } else {
-        showDialog({
-          modelId: llmModel,
-          modelType: 'llm',
-          confirmDownload: startDownload,
-          cancelDownload,
-        });
-      }
-
-      worker.onmessage = (e: MessageEvent<LLMWorkerOutput>) => {
-        const msg = e.data;
-        if (msg.type === 'delta') {
-          callbacks.onDelta(msg.content);
-        } else if (msg.type === 'tool_call') {
-          callbacks.onToolCall(msg.name, msg.args);
-        } else if (msg.type === 'done') {
-          setLLMStatus({ loading: false, status: 'ready' });
-          hideDialog();
-          callbacks.onDone();
-        } else if (msg.type === 'status') {
-          setLLMStatus({ loading: true, status: msg.message, progress: msg.progress });
-          updateStatus(msg.message, msg.progress);
-        } else if (msg.type === 'error') {
-          setLLMStatus({ loading: false, status: 'error' });
-          updateStatus('error');
-        }
-      };
-    },
-    [llmModel, showDialog, hideDialog, updateStatus],
-  );
-
   const load = useCallback(
     (modelId: string, onDone?: () => void) => {
       const worker = workerRef.current;
       if (!worker) return;
 
       const startDownload = () => {
-        worker.postMessage({ type: 'load', modelId });
+        setLLMStatus({ loading: true, status: 'Loading model...', progress: 0 });
+        updateStatus('Loading model...', 0);
+        worker.postMessage({
+          type: 'load',
+          data: {
+            modelId,
+            device: 'auto',
+          },
+        });
       };
 
       const cancelDownload = () => {
-        worker.postMessage({ type: 'abort' });
+        worker.postMessage({ type: 'interrupt' });
         hideDialog();
         setLLMStatus({ loading: false, status: 'idle' });
       };
@@ -105,24 +61,37 @@ export function useLLM() {
         cancelDownload,
       });
 
-      worker.onmessage = (e: MessageEvent<LLMWorkerOutput>) => {
-        const msg = e.data;
-        if (msg.type === 'status') {
-          setLLMStatus({ loading: true, status: msg.message, progress: msg.progress });
-          updateStatus(msg.message, msg.progress);
-          if (msg.message === 'Model ready') {
-            setLLMStatus({ loading: false, status: 'ready' });
-            hideDialog();
-            onDone?.();
-          }
-        } else if (msg.type === 'error') {
+      worker.onmessage = (event: MessageEvent<BrowserAIWorkerMessage>) => {
+        const message = event.data;
+
+        if (message.status === 'ready') {
+          setLLMStatus({ loading: false, status: 'ready' });
+          hideDialog();
+          onDone?.();
+          return;
+        }
+
+        if (message.status === 'error') {
           setLLMStatus({ loading: false, status: 'error' });
           updateStatus('error');
+          return;
         }
+
+        if (message.status === 'progress') {
+          const progress = progressPercent(message.progress);
+          const status = message.file ? `Loading ${message.file}` : 'Loading model...';
+          setLLMStatus({ loading: true, status, progress });
+          updateStatus(status, progress);
+          return;
+        }
+
+        const status = message.data ?? 'Loading model...';
+        setLLMStatus({ loading: true, status, progress: message.progress });
+        updateStatus(status, message.progress);
       };
     },
-    [showDialog, hideDialog, updateStatus],
+    [hideDialog, showDialog, updateStatus],
   );
 
-  return { generate, load, llmStatus };
+  return { load, llmStatus };
 }

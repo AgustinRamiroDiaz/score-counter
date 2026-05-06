@@ -1,3 +1,5 @@
+import { tool } from 'ai';
+import { z } from 'zod';
 import type { Game, Player } from '@/lib/types';
 
 export interface ToolResult {
@@ -31,21 +33,6 @@ export function buildLeaderboard(
   });
 }
 
-export type ToolArgs = {
-  add_round: { scores: Record<string, number> };
-  update_round: { round_number: number; scores: Record<string, number> };
-  undo_last_round: Record<string, never>;
-  get_leaderboard: Record<string, never>;
-  update_player: { target: string; name?: string; aliases?: string[] };
-  navigate: { view: 'scoring' | 'leaderboard' | 'chart' | 'table' };
-  create_game: {
-    name: string;
-    players: Array<{ name: string; aliases?: string[] }>;
-  };
-};
-
-export type ToolName = keyof ToolArgs;
-
 export interface ToolStore {
   addRound: (gameId: string, scores: Record<string, number>) => void;
   updateRound: (gameId: string, roundId: string, scores: Record<string, number>) => void;
@@ -54,40 +41,46 @@ export interface ToolStore {
   createGame: (name: string, players: Omit<Player, 'id'>[]) => string;
 }
 
-export function executeTool<K extends ToolName>(
-  name: K,
-  args: ToolArgs[K],
+export const createTools = (
   game: Game | undefined,
   store: ToolStore,
   navigate: (view: string, gameId?: string) => void,
-): ToolResult {
-  switch (name) {
-    case 'create_game': {
-      const { name: gameName, players } = args as ToolArgs['create_game'];
-      if (!gameName?.trim()) return { success: false, message: 'A game name is required.' };
-      if (!players || players.length < 2) {
-        return { success: false, message: 'At least 2 players are required.' };
-      }
+) => ({
+  create_game: tool({
+    description: 'Create a new game with a list of players.',
+    inputSchema: z.object({
+      name: z.string().describe('The name of the game'),
+      players: z.array(z.object({
+        name: z.string(),
+        aliases: z.array(z.string()).optional(),
+      })).min(2).describe('At least 2 players required'),
+    }),
+    execute: async ({ name, players }: { name: string; players: Array<{ name: string; aliases?: string[] }> }) => {
       const newId = store.createGame(
-        gameName.trim(),
+        name.trim(),
         players.map((p) => ({ name: p.name.trim(), aliases: p.aliases ?? [] })),
       );
       navigate('scoring', newId);
       return {
         success: true,
-        message: `Game "${gameName}" created with ${players.length} players! You're all set to score rounds.`,
+        message: `Game "${name}" created with ${players.length} players! You're all set to score rounds.`,
       };
-    }
+    },
+  }),
 
-    case 'add_round': {
+  add_round: tool({
+    description: 'Record scores for ALL players for a new round. Must include every player.',
+    inputSchema: z.object({
+      scores: z.record(z.string(), z.number()).describe('Object mapping player name/alias to points'),
+    }),
+    execute: async ({ scores }: { scores: Record<string, number> }) => {
       if (!game) return { success: false, message: 'No active game.' };
-      const { scores } = args as ToolArgs['add_round'];
       const resolvedScores: Record<string, number> = {};
       const missing: string[] = [];
       for (const player of game.players) {
         const match = Object.entries(scores).find(([k]) => resolvePlayer(k, game.players)?.id === player.id);
         if (match) {
-          resolvedScores[player.id] = match[1];
+          resolvedScores[player.id] = match[1] as number;
         } else {
           missing.push(player.name);
         }
@@ -97,11 +90,17 @@ export function executeTool<K extends ToolName>(
       }
       store.addRound(game.id, resolvedScores);
       return { success: true, message: `Round ${game.rounds.length + 1} recorded.` };
-    }
+    },
+  }),
 
-    case 'update_round': {
+  update_round: tool({
+    description: 'Correct scores for a past round by its round number.',
+    inputSchema: z.object({
+      round_number: z.number().int().positive(),
+      scores: z.record(z.string(), z.number()),
+    }),
+    execute: async ({ round_number, scores }: { round_number: number; scores: Record<string, number> }) => {
       if (!game) return { success: false, message: 'No active game.' };
-      const { round_number, scores } = args as ToolArgs['update_round'];
       const round = game.rounds.find((r) => r.number === round_number);
       if (!round) return { success: false, message: `Round ${round_number} not found.` };
       const resolvedScores: Record<string, number> = { ...round.scores };
@@ -111,25 +110,40 @@ export function executeTool<K extends ToolName>(
       }
       store.updateRound(game.id, round.id, resolvedScores);
       return { success: true, message: `Round ${round_number} updated.` };
-    }
+    },
+  }),
 
-    case 'undo_last_round': {
+  undo_last_round: tool({
+    description: 'Remove the most recently recorded round.',
+    inputSchema: z.object({}),
+    execute: async () => {
       if (!game) return { success: false, message: 'No active game.' };
       if (game.rounds.length === 0) return { success: false, message: 'No rounds to undo.' };
       store.undoLastRound(game.id);
       return { success: true, message: 'Last round removed.' };
-    }
+    },
+  }),
 
-    case 'get_leaderboard': {
+  get_leaderboard: tool({
+    description: 'Return the current standings sorted by total score.',
+    inputSchema: z.object({}),
+    execute: async () => {
       if (!game) return { success: false, message: 'No active game.' };
       const lb = buildLeaderboard(game);
       const summary = lb.map((e) => `${e.rank}. ${e.player.name}: ${e.total}`).join('\n');
       return { success: true, message: `Current standings:\n${summary}`, data: lb };
-    }
+    },
+  }),
 
-    case 'update_player': {
+  update_player: tool({
+    description: 'Rename a player or update their aliases.',
+    inputSchema: z.object({
+      target: z.string().describe('Current name or alias'),
+      name: z.string().optional(),
+      aliases: z.array(z.string()).optional(),
+    }),
+    execute: async ({ target, name: newName, aliases }: { target: string; name?: string; aliases?: string[] }) => {
       if (!game) return { success: false, message: 'No active game.' };
-      const { target, name: newName, aliases } = args as ToolArgs['update_player'];
       const player = resolvePlayer(target, game.players);
       if (!player) return { success: false, message: `Player "${target}" not found.` };
       store.updatePlayer(game.id, player.id, {
@@ -137,16 +151,18 @@ export function executeTool<K extends ToolName>(
         ...(aliases ? { aliases } : {}),
       });
       return { success: true, message: `Player updated.` };
-    }
+    },
+  }),
 
-    case 'navigate': {
+  navigate: tool({
+    description: 'Switch to a different view (scoring, leaderboard, chart, or table).',
+    inputSchema: z.object({
+      view: z.enum(['scoring', 'leaderboard', 'chart', 'table']),
+    }),
+    execute: async ({ view }: { view: 'scoring' | 'leaderboard' | 'chart' | 'table' }) => {
       if (!game) return { success: false, message: 'No active game to navigate within.' };
-      const { view } = args as ToolArgs['navigate'];
       navigate(view, game.id);
       return { success: true, message: `Navigated to ${view}.` };
-    }
-
-    default:
-      return { success: false, message: `Unknown tool: ${name as string}` };
-  }
-}
+    },
+  }),
+});

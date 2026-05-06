@@ -1,14 +1,43 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import type { ChatMessage as ChatMessageType } from '@/lib/types';
+import type { UIMessage } from '@ai-sdk/react';
+import { isToolUIPart } from 'ai';
 
 interface Props {
-  message: ChatMessageType;
+  message: UIMessage;
+}
+
+function messageFromToolOutput(output: unknown): string | null {
+  if (typeof output === 'string') return output;
+  if (output && typeof output === 'object' && 'message' in output) {
+    const message = output.message;
+    return typeof message === 'string' ? message : null;
+  }
+  return null;
 }
 
 export function ChatMessage({ message }: Props) {
   const isUser = message.role === 'user';
+
+  const textContent = message.parts
+    .filter((part) => part.type === 'text')
+    .map((part) => (part.type === 'text' ? part.text : ''))
+    .join('');
+  const toolContent = message.parts
+    .filter(isToolUIPart)
+    .map((part) => {
+      if (part.state === 'output-available') {
+        return messageFromToolOutput(part.output);
+      }
+      if (part.state === 'output-error') {
+        return part.errorText;
+      }
+      return null;
+    })
+    .filter((part): part is string => part !== null)
+    .join('\n');
+  const content = textContent || toolContent;
 
   return (
     <div className={cn('flex gap-2', isUser ? 'flex-row-reverse' : 'flex-row')}>
@@ -24,7 +53,6 @@ export function ChatMessage({ message }: Props) {
         {isUser ? 'You' : 'AI'}
       </div>
 
-      {/* Bubble */}
       <div
         className={cn(
           'max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
@@ -33,8 +61,8 @@ export function ChatMessage({ message }: Props) {
             : 'bg-ai/10 text-foreground rounded-tl-sm border border-ai/15',
         )}
       >
-        {message.content ? (
-          <span className="whitespace-pre-wrap">{message.content}</span>
+        {content ? (
+          <span className="whitespace-pre-wrap">{content}</span>
         ) : (
           <span className="flex gap-1 items-center py-0.5">
             {[0, 150, 300].map((delay) => (

@@ -23,13 +23,6 @@ export interface AppSettings {
   llmModel: string;
 }
 
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: number;
-}
-
 export interface GameSummary {
   id: string;
   name: string;
@@ -37,33 +30,17 @@ export interface GameSummary {
   roundCount: number;
 }
 
-export interface GameContext {
-  mode: 'home' | 'game';
-  gameName?: string;
-  players?: Pick<Player, 'id' | 'name' | 'aliases'>[];
-  rounds?: Round[];
-  availableGames: GameSummary[];
-}
-
-// Worker message types
-export type LLMWorkerInput =
-  | { type: 'generate'; messages: ChatMessage[]; gameContext: GameContext; modelId?: string }
-  | { type: 'load'; modelId: string }
-  | { type: 'abort' };
-
-export type LLMWorkerOutput =
-  | { type: 'delta'; content: string }
-  | { type: 'tool_call'; name: string; args: Record<string, unknown> }
-  | { type: 'done' }
-  | { type: 'status'; message: string; progress?: number }
-  | { type: 'error'; message: string };
-
 export type STTWorkerInput =
-  | { type: 'transcribe'; audio: Float32Array; sampleRate: number; modelId?: string }
-  | { type: 'load'; modelId: string }
-  | { type: 'abort' };
+  | {
+      type: "transcribe";
+      audio: Float32Array;
+      sampleRate: number;
+      modelId?: string;
+    }
+  | { type: "load"; modelId: string }
+  | { type: "abort" };
 
 export type STTWorkerOutput =
-  | { type: 'transcript'; text: string }
-  | { type: 'status'; message: string; progress?: number }
-  | { type: 'error'; message: string };
+  | { type: "transcript"; text: string }
+  | { type: "status"; message: string; progress?: number }
+  | { type: "error"; message: string };
