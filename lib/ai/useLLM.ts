@@ -15,9 +15,9 @@ type BrowserAIWorkerMessage =
   | { status: 'error'; data?: string }
   | { status: 'progress'; progress?: number; file?: string };
 
-function progressPercent(progress: number | undefined): number | undefined {
+function normalizeProgress(progress: number | undefined): number | undefined {
   if (progress === undefined) return undefined;
-  return progress <= 1 ? Math.round(progress * 100) : Math.round(progress);
+  return progress <= 1 ? progress : progress / 100;
 }
 
 export function useLLM() {
@@ -78,7 +78,7 @@ export function useLLM() {
         }
 
         if (message.status === 'progress') {
-          const progress = progressPercent(message.progress);
+          const progress = normalizeProgress(message.progress);
           const status = message.file ? `Loading ${message.file}` : 'Loading model...';
           setLLMStatus({ loading: true, status, progress });
           updateStatus(status, progress);

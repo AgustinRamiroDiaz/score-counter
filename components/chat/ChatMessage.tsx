@@ -40,7 +40,10 @@ export function ChatMessage({ message }: Props) {
   const content = textContent || toolContent;
 
   return (
-    <div className={cn('flex gap-2', isUser ? 'flex-row-reverse' : 'flex-row')}>
+    <div
+      className={cn('flex gap-2', isUser ? 'flex-row-reverse' : 'flex-row')}
+      data-testid={`chat-message-${message.role}`}
+    >
       {/* Avatar dot */}
       <div
         className={cn(
@@ -54,6 +57,7 @@ export function ChatMessage({ message }: Props) {
       </div>
 
       <div
+        data-testid={`chat-message-content-${message.role}`}
         className={cn(
           'max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
           isUser

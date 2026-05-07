@@ -128,7 +128,7 @@ class BrowserLLMTransport implements ChatTransport<UIMessage> {
       worker: this.getWorker(),
       device: 'auto',
       initProgressCallback: (progress) => {
-        updateStatus('Loading model...', Math.round(progress * 100));
+        updateStatus('Loading model...', progress);
       },
     });
 

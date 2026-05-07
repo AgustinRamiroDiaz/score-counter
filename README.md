@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Score Counter
 
-## Getting Started
+A client-only Next.js score tracking app with an in-browser AI chat assistant.
 
-First, run the development server:
+## Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The dev server runs on port `3456`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+http://localhost:3456
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Checks
 
-## Learn More
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+```
 
-To learn more about Next.js, take a look at the following resources:
+## E2E Tests
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Playwright E2E tests live in `tests/e2e`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Run all E2E tests:
 
-## Deploy on Vercel
+```bash
+npm run test:e2e
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Run only the AI chat test:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run test:e2e -- tests/e2e/chat-ai.spec.ts --timeout=900000
+```
+
+The AI chat test opens the global chat, clicks `What can you do?`, waits for the local Transformers.js model to answer, and asserts that the assistant produced a non-empty response.
+
+## Browser Model Cache
+
+The AI E2E test uses a real LLM through Browser AI, Transformers.js, and the Vercel AI SDK. The first run may download and initialize the test model:
+
+```text
+HuggingFaceTB/SmolLM2-360M-Instruct
+```
+
+To avoid downloading the model every run, the Playwright fixture uses a persistent Chromium profile:
+
+```text
+.playwright/browser-cache/chromium
+```
+
+That profile stores browser Cache Storage, IndexedDB, localStorage, and other browser data used by Transformers.js. It is intentionally ignored by git.
+
+Caveats:
+
+- The first run can be slow because it downloads model files from Hugging Face and warms up the model.
+- Later runs should be much faster as long as `.playwright/browser-cache/chromium` remains in place.
+- Deleting `.playwright` clears the browser model cache and forces a fresh download.
+- The AI E2E test is stateful at the browser-profile level, but it resets the app's local game data and test model setting before running.
+- CI should cache `.playwright/browser-cache/chromium` if model download time is a concern.
+- If Playwright browser binaries are missing, install them with:
+
+```bash
+npx playwright install chromium
+```
