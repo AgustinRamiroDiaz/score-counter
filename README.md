@@ -46,7 +46,7 @@ The AI chat test opens the global chat, clicks `What can you do?`, waits for the
 The AI E2E test uses a real LLM through Browser AI, Transformers.js, and the Vercel AI SDK. The first run may download and initialize the test model:
 
 ```text
-HuggingFaceTB/SmolLM2-360M-Instruct
+HuggingFaceTB/SmolLM2-135M-Instruct
 ```
 
 To avoid downloading the model every run, the Playwright fixture uses a persistent Chromium profile:
