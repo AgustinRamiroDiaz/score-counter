@@ -5,8 +5,8 @@ A client-only Next.js score tracking app with an in-browser AI chat assistant.
 ## Development
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 The dev server runs on port `3456`:
@@ -18,9 +18,9 @@ http://localhost:3456
 ## Checks
 
 ```bash
-npm run lint
-npx tsc --noEmit
-npm run build
+pnpm lint
+pnpm exec tsc --noEmit
+pnpm build
 ```
 
 ## E2E Tests
@@ -30,13 +30,13 @@ Playwright E2E tests live in `tests/e2e`.
 Run all E2E tests:
 
 ```bash
-npm run test:e2e
+pnpm test:e2e
 ```
 
 Run only the AI chat test:
 
 ```bash
-npm run test:e2e -- tests/e2e/chat-ai.spec.ts --timeout=900000
+pnpm test:e2e tests/e2e/chat-ai.spec.ts --timeout=900000
 ```
 
 The AI chat test opens the global chat, clicks `What can you do?`, waits for the local Transformers.js model to answer, and asserts that the assistant produced a non-empty response.
@@ -67,5 +67,5 @@ Caveats:
 - If Playwright browser binaries are missing, install them with:
 
 ```bash
-npx playwright install chromium
+pnpm exec playwright install chromium
 ```
