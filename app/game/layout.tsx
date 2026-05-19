@@ -1,7 +1,7 @@
 'use client';
 
-import { use } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useGameStore } from '@/lib/store/gameStore';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { Button } from '@/components/ui/button';
@@ -10,11 +10,19 @@ import { ArrowLeft } from 'lucide-react';
 
 interface Props {
   children: React.ReactNode;
-  params: Promise<{ id: string }>;
 }
 
-export default function GameLayout({ children, params }: Props) {
-  const { id } = use(params);
+export default function GameLayout({ children }: Props) {
+  return (
+    <Suspense fallback={<div className="min-h-dvh bg-background" />}>
+      <GameLayoutContent>{children}</GameLayoutContent>
+    </Suspense>
+  );
+}
+
+function GameLayoutContent({ children }: Props) {
+  const searchParams = useSearchParams();
+  const id = searchParams.get('id');
   const router = useRouter();
   const game = useGameStore((s) => s.games.find((g) => g.id === id));
 
@@ -43,7 +51,7 @@ export default function GameLayout({ children, params }: Props) {
 
       <main className="flex-1 overflow-y-auto pb-[56px]">{children}</main>
 
-      <BottomNav gameId={id} />
+      <BottomNav gameId={id ?? ''} />
     </div>
   );
 }

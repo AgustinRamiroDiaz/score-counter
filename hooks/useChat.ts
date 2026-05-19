@@ -650,7 +650,8 @@ export function useChat() {
     () => (view: string, gameId?: string) => {
       const targetId = gameId ?? currentGameId;
       if (targetId) {
-        router.push(`/game/${targetId}${view === 'scoring' ? '' : `/${view}`}`);
+        const path = view === 'scoring' ? '/game' : `/game/${view}`;
+        router.push(`${path}?id=${targetId}`);
       } else {
         router.push('/');
       }

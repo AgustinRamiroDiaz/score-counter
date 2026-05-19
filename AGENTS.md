@@ -23,7 +23,7 @@ No test framework configured.
 - `@/*` → root (e.g. `@/lib/types` → `lib/types.ts`)
 - Workers use `new URL()` pattern: `new Worker(new URL('../workers/llm.worker.ts', import.meta.url))`
 - `lib/workers/llm.worker.ts` sets `env.allowLocalModels = false` — models fetch from HuggingFace CDN
-- Game pages: `app/game/[id]/` with tab-based routing (page, table, chart, leaderboard)
+- Game pages: `app/game/` with query param `id` and tab-based subroutes (page, table, chart, leaderboard)
 
 ## Conventions
 - Every `app/` page/component needs `'use client'` directive

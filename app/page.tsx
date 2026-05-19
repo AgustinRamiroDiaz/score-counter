@@ -49,7 +49,7 @@ export default function Home() {
     setSheetOpen(false);
     setGameName('');
     setStep('name');
-    router.push(`/game/${id}`);
+    router.push(`/game?id=${id}`);
   };
 
   const openSheet = () => {
@@ -136,7 +136,7 @@ export default function Home() {
                   <div
                     key={game.id}
                     className="group relative flex items-center gap-4 p-4 rounded-2xl bg-card border border-border hover:border-primary/30 transition-all cursor-pointer"
-                    onClick={() => router.push(`/game/${game.id}`)}
+                    onClick={() => router.push(`/game?id=${game.id}`)}
                     style={{ animationDelay: `${i * 60}ms` }}
                   >
                     {/* Rank indicator */}

@@ -1,6 +1,7 @@
 'use client';
 
-import { use, useState } from 'react';
+import { useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useGameStore } from '@/lib/store/gameStore';
 import { useGame } from '@/hooks/useGame';
 import { RoundSheet } from '@/components/game/RoundSheet';
@@ -8,17 +9,22 @@ import { Button } from '@/components/ui/button';
 import { Plus, Undo2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-interface Props {
-  params: Promise<{ id: string }>;
+export default function ScoringPage() {
+  return (
+    <Suspense fallback={null}>
+      <ScoringPageContent />
+    </Suspense>
+  );
 }
 
-export default function ScoringPage({ params }: Props) {
-  const { id } = use(params);
-  const { game, totalByPlayer, leaderboard } = useGame(id);
+function ScoringPageContent() {
+  const searchParams = useSearchParams();
+  const id = searchParams.get('id');
+  const { game, totalByPlayer, leaderboard } = useGame(id ?? '');
   const { addRound, undoLastRound } = useGameStore();
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  if (!game) return null;
+  if (!game || !id) return null;
 
   const nextRoundNumber = game.rounds.length + 1;
 

@@ -18,17 +18,15 @@ const TABS = [
 
 export function BottomNav({ gameId }: Props) {
   const pathname = usePathname();
-  const base = `/game/${gameId}`;
+  const base = '/game';
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-card/95 backdrop-blur border-t border-border">
       <div className="flex items-stretch max-w-lg mx-auto h-14">
         {TABS.map(({ label, href, icon: Icon }) => {
-          const fullHref = `${base}${href}`;
-          const isActive =
-            href === ''
-              ? pathname === base || pathname === `${base}/`
-              : pathname.startsWith(fullHref);
+          const fullPath = `${base}${href}`;
+          const fullHref = `${fullPath}?id=${gameId}`;
+          const isActive = pathname === fullPath || pathname === `${fullPath}/`;
 
           return (
             <Link
