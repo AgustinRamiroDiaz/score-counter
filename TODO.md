@@ -1,3 +1,14 @@
-# Thinking UI cue is wrong
+# Mediapipe works weirdly
 
-It shows `Thinking...` even after the model finished
+Example conversation:
+
+```
+You
+What can you do?
+AI
+Game "Game name" created with 2 players.
+You
+Hello!
+AI
+Game "Game name" created with 2 players.
+```
