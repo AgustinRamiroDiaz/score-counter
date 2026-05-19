@@ -4,6 +4,7 @@ export interface ModelPreset {
   description: string;
   size: string;
   sizeBytes: number;
+  backend?: "transformers" | "mediapipe";
 }
 
 export const LLM_MODELS: ModelPreset[] = [
@@ -13,6 +14,7 @@ export const LLM_MODELS: ModelPreset[] = [
     description: "Best quality for chat & tool use. Requires 4+ GB RAM.",
     size: "~3.2 GB",
     sizeBytes: 3_200_000_000,
+    backend: "transformers",
   },
   {
     id: "onnx-community/gemma-3n-E2B-it-ONNX",
@@ -21,6 +23,7 @@ export const LLM_MODELS: ModelPreset[] = [
       "Google's newest efficient model. High quality, optimized size.",
     size: "~1.7 GB",
     sizeBytes: 1_700_000_000,
+    backend: "transformers",
   },
   {
     id: "HuggingFaceTB/SmolLM2-135M-Instruct",
@@ -29,6 +32,7 @@ export const LLM_MODELS: ModelPreset[] = [
       "Small model, good balance of quality and speed. Requires 2.5+ GB RAM.",
     size: "~1.8 GB",
     sizeBytes: 1_800_000_000,
+    backend: "transformers",
   },
   {
     id: "onnx-community/Qwen3.5-0.6B-Instruct-onnx",
@@ -36,6 +40,7 @@ export const LLM_MODELS: ModelPreset[] = [
     description: "Alibaba's tiny model. Fast, ~1.1 GB download.",
     size: "~1.1 GB",
     sizeBytes: 1_100_000_000,
+    backend: "transformers",
   },
   {
     id: "onnx-community/Qwen2.5-1.5B-Instruct-onnx",
@@ -43,6 +48,7 @@ export const LLM_MODELS: ModelPreset[] = [
     description: "Alibaba's small model. Good multilingual support.",
     size: "~1.6 GB",
     sizeBytes: 1_600_000_000,
+    backend: "transformers",
   },
   {
     id: "onnx-community/Phi-3-mini-4k-instruct-onnx",
@@ -50,6 +56,16 @@ export const LLM_MODELS: ModelPreset[] = [
     description: "Microsoft's compact model. Fast, decent quality.",
     size: "~2.3 GB",
     sizeBytes: 2_300_000_000,
+    backend: "transformers",
+  },
+  {
+    id: "mediapipe-local-gemma",
+    label: "Local Gemma Web model",
+    description:
+      "Use a local Web-compatible Gemma .litertlm or .task file. Requires WebGPU.",
+    size: "Local file",
+    sizeBytes: 0,
+    backend: "mediapipe",
   },
 ];
 

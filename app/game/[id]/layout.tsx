@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useGameStore } from '@/lib/store/gameStore';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { Button } from '@/components/ui/button';
+import { formatGameDate } from '@/lib/utils';
 import { ArrowLeft } from 'lucide-react';
 
 interface Props {
@@ -35,7 +36,7 @@ export default function GameLayout({ children, params }: Props) {
         <div className="flex-1 min-w-0">
           <h1 className="font-display text-xl tracking-wide truncate leading-none">{game.name}</h1>
           <p className="text-xs text-muted-foreground">
-            {game.players.length} players · {game.rounds.length} rounds
+            Created {formatGameDate(game.createdAt)} · {game.players.length} players · {game.rounds.length} rounds
           </p>
         </div>
       </header>

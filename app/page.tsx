@@ -23,6 +23,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { PlayerForm } from '@/components/game/PlayerForm';
+import { formatGameDate } from '@/lib/utils';
 import { Settings, Plus, Trash2, ChevronRight, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import type { Player } from '@/lib/types';
@@ -146,7 +147,7 @@ export default function Home() {
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-base truncate">{game.name}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {game.players.length} players · {game.rounds.length} rounds
+                        Created {formatGameDate(game.createdAt)} · {game.players.length} players · {game.rounds.length} rounds
                         {topPlayer && game.rounds.length > 0 && (
                           <span className="text-primary/80 ml-2">
                             · 🥇 {topPlayer.p.name}

@@ -21,6 +21,17 @@ export interface Game {
 export interface AppSettings {
   sttModel: string;
   llmModel: string;
+  llmBackend: LLMBackend;
+  mediapipeModel?: MediaPipeModelMetadata;
+}
+
+export type LLMBackend = "transformers" | "mediapipe";
+
+export interface MediaPipeModelMetadata {
+  name: string;
+  size: number;
+  lastModified: number;
+  handleAvailable: boolean;
 }
 
 export interface GameSummary {
