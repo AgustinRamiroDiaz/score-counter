@@ -2,7 +2,7 @@
 
 import { useChat as useVercelChat } from '@ai-sdk/react';
 import { useEffect, useMemo, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { transformersJS } from '@browser-ai/transformers-js';
 import { useGameStore } from '@/lib/store/gameStore';
 import { useModelDownloadStore } from '@/lib/store/modelDownloadStore';
@@ -517,9 +517,14 @@ class BrowserLLMTransport implements ChatTransport<UIMessage> {
               toolResults,
               'tool',
             );
+            
+            this.snapshot.updateStatus('Thinking...');
+
             const decisionText = await this.generateWithMediaPipe(prompt, false);
             const decision = parseMediaPipeToolRequest(decisionText);
+
             if ('response' in decision) {
+              this.snapshot.updateStatus('');
               writer.write({ type: 'text-start', id: textId });
               writer.write({ type: 'text-delta', id: textId, delta: decision.response });
               writer.write({ type: 'text-end', id: textId });
@@ -529,15 +534,18 @@ class BrowserLLMTransport implements ChatTransport<UIMessage> {
             }
             const toolResult = await executeMediaPipeTool(decision, this.snapshot);
             toolResults.push(toolResult);
-            if (!toolResult.success) break;
-            writer.write({ type: 'text-start', id: textId });
-            writer.write({ type: 'text-delta', id: textId, delta: toolResult.message });
-            writer.write({ type: 'text-end', id: textId });
-            writer.write({ type: 'finish-step' });
-            writer.write({ type: 'finish', finishReason: 'stop' });
-            return;
+
+            writer.write({ type: 'text-start', id: `tool-${step}` });
+            writer.write({ type: 'text-delta', id: `tool-${step}`, delta: `\n> ${toolResult.message}\n` });
+            writer.write({ type: 'text-end', id: `tool-${step}` });
+
+            if (!toolResult.success) {
+              this.snapshot.updateStatus('');
+              break;
+            }
           }
 
+          this.snapshot.updateStatus('Generating response...');
           const finalPrompt = buildMediaPipePrompt(
             this.snapshot.games,
             this.snapshot.currentGame,
@@ -545,8 +553,16 @@ class BrowserLLMTransport implements ChatTransport<UIMessage> {
             toolResults,
             'final',
           );
+          
           writer.write({ type: 'text-start', id: textId });
           await this.generateWithMediaPipe(finalPrompt, true, writer, textId);
+          
+          // Ensure the final full text is written in case streaming missed the last chunk
+          // or if we want to ensure consistency. 
+          // UIMessageStreamWriter handles duplicate deltas if IDs match, but here 
+          // we are providing the full text at the end of the stream for that part.
+          // Actually, createUIMessageStream's writer doesn't have a 'set-text' so we rely on deltas.
+          
           writer.write({ type: 'text-end', id: textId });
           writer.write({ type: 'finish-step' });
           writer.write({ type: 'finish', finishReason: 'stop' });
@@ -556,6 +572,7 @@ class BrowserLLMTransport implements ChatTransport<UIMessage> {
             errorText: err instanceof Error ? err.message : 'MediaPipe generation failed.',
           });
         } finally {
+          this.snapshot.updateStatus('');
           this.snapshot.hideDialog();
           this.currentAbortSignal = undefined;
         }
@@ -624,7 +641,6 @@ class BrowserLLMTransport implements ChatTransport<UIMessage> {
 
 export function useChat() {
   const router = useRouter();
-  const pathname = usePathname();
   const games = useGameStore((s) => s.games);
   const llmModel = useSettingsStore((s) => s.llmModel);
   const llmBackend = useSettingsStore((s) => s.llmBackend);
@@ -635,7 +651,8 @@ export function useChat() {
   const updatePlayer = useGameStore((s) => s.updatePlayer);
   const createGame = useGameStore((s) => s.createGame);
 
-  const currentGameId = pathname?.match(/\/game\/([^/]+)/)?.[1];
+  const searchParams = useSearchParams();
+  const currentGameId = searchParams.get('id') || undefined;
   const currentGame = useMemo(
     () => (currentGameId ? games.find((g) => g.id === currentGameId) : undefined),
     [currentGameId, games],

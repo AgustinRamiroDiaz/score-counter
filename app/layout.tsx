@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Bebas_Neue, Syne } from 'next/font/google';
+import { Suspense } from 'react';
 import './globals.css';
 import { ChatProvider } from '@/context/ChatContext';
 import { GlobalChatDrawer } from '@/components/chat/GlobalChatDrawer';
@@ -36,12 +37,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${syne.variable} ${bebas.variable}`}>
       <body className="min-h-dvh bg-background text-foreground antialiased">
-        <ChatProvider>
-          {children}
-          <GlobalChatDrawer />
-          <FloatingChatButton />
-          <ModelDownloadDialogWrapper />
-        </ChatProvider>
+        <Suspense fallback={null}>
+          <ChatProvider>
+            {children}
+            <GlobalChatDrawer />
+            <FloatingChatButton />
+            <ModelDownloadDialogWrapper />
+          </ChatProvider>
+        </Suspense>
       </body>
     </html>
   );

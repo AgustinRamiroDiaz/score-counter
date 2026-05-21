@@ -1,13 +1,13 @@
 import type { NextConfig } from "next";
 
-const isProd = process.env.NODE_ENV === 'production';
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: 'export',
   // GitHub Pages deployment usually happens at /<repository-name>/
-  // If you are deploying to a custom domain, remove the basePath
-  basePath: isProd ? '/score-counter' : '',
+  // Use NEXT_PUBLIC_BASE_PATH=/score-counter for that deployment target.
+  basePath,
   images: {
     unoptimized: true,
   },

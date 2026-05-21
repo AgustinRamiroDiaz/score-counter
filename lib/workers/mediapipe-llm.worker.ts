@@ -46,7 +46,9 @@ interface StableGPUDevice {
 
 function post(message: MediaPipeLLMWorkerOutput) {
   if (message.type === 'status' || message.type === 'ready' || message.type === 'error') {
-    console.warn(`[mediapipe-worker] ${message.type}: ${'message' in message ? message.message : 'ready'}`);
+    const detail = 'message' in message ? message.message : 'ready';
+    const rid = 'requestId' in message ? ` [${message.requestId}]` : '';
+    console.warn(`[mediapipe-worker] ${message.type}${rid}: ${detail}`);
   }
   self.postMessage(message);
 }
@@ -157,24 +159,36 @@ self.onmessage = async (event: MessageEvent<MediaPipeLLMWorkerInput>) => {
       }
 
       const prompt = formatGemmaPrompt(message.prompt);
-      const tokenCount = llm.sizeInTokens(prompt);
-      console.warn(
-        `[mediapipe-worker] generate start: ${prompt.length} chars, ${tokenCount ?? 'unknown'} tokens, sessionMaxTokens=${MEDIAPIPE_MAX_TOKENS}, requestedMaxTokens=${message.maxTokens}`,
-      );
+      console.warn(`[mediapipe-worker] generate start: ${prompt.length} chars, stream=${message.stream}`);
 
-      let text = '';
-      const result = await llm.generateResponse(prompt, (partialResult, done) => {
-        const delta = partialResult.startsWith(text) ? partialResult.slice(text.length) : partialResult;
-        text = partialResult;
-        if (!done && partialResult.length > 0) {
-          console.warn(`[mediapipe-worker] generate partial: ${partialResult.length} chars`);
-        }
-        if (message.stream) {
-          post({ type: 'delta', requestId: message.requestId, text: delta });
-        }
-      });
-      console.warn(`[mediapipe-worker] generate done: ${(result || text).length} chars`);
-      post({ type: 'done', requestId: message.requestId, text: result || text });
+      let fullText = '';
+      // Use generateResponseStreaming for actual partials if possible, 
+      // though tasks-genai might only have generateResponse with a callback 
+      // in some versions. Let's stick to the callback but ensure it's handled right.
+      
+      try {
+        const result = await llm.generateResponse(prompt, (partialResult) => {
+          // The callback gives the FULL accumulated string so far
+          const delta = partialResult.slice(fullText.length);
+          fullText = partialResult;
+
+          if (message.stream && delta.length > 0) {
+            console.warn(`[mediapipe-worker] delta: ${delta.length} chars`);
+            post({ type: 'delta', requestId: message.requestId, text: delta });
+          }
+        });
+
+        const finalOutput = result || fullText;
+        console.warn(`[mediapipe-worker] done: ${finalOutput.length} chars`);
+        post({ type: 'done', requestId: message.requestId, text: finalOutput });
+      } catch (genErr) {
+        console.error('[mediapipe-worker] generation error:', genErr);
+        post({ 
+          type: 'error', 
+          requestId: message.requestId, 
+          message: genErr instanceof Error ? genErr.message : 'Generation failed' 
+        });
+      }
       return;
     }
 
