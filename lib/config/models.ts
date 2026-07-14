@@ -4,7 +4,7 @@ export interface ModelPreset {
   description: string;
   size: string;
   sizeBytes: number;
-  backend?: "transformers" | "mediapipe";
+  backend?: "transformers" | "mediapipe" | "ollama";
 }
 
 export const LLM_MODELS: ModelPreset[] = [
@@ -66,6 +66,15 @@ export const LLM_MODELS: ModelPreset[] = [
     size: "Local file",
     sizeBytes: 0,
     backend: "mediapipe",
+  },
+  {
+    id: "ollama-local",
+    label: "Local Ollama server",
+    description:
+      "Use an Ollama model served from a local HTTP endpoint. Requires Ollama to be running.",
+    size: "Local server",
+    sizeBytes: 0,
+    backend: "ollama",
   },
 ];
 

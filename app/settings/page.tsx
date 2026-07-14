@@ -13,9 +13,10 @@ import {
   supportsFileSystemModelPicker,
 } from '@/lib/ai/mediapipeModelFile';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Bot, Mic, HardDrive, Info, CheckCircle2, Download, Upload } from 'lucide-react';
+import { ArrowLeft, Bot, Mic, HardDrive, Info, CheckCircle2, Download, Upload, Server } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -31,10 +32,14 @@ export default function SettingsPage() {
     sttModel,
     llmModel,
     llmBackend,
+    ollamaUrl,
+    ollamaModel,
     mediapipeModel,
     setSTTModel,
     setLLMModel,
     setLLMBackend,
+    setOllamaUrl,
+    setOllamaModel,
     setMediaPipeModel,
   } = useSettingsStore();
   const { load: loadLLM } = useLLM();
@@ -153,13 +158,19 @@ export default function SettingsPage() {
               <Bot className="h-3.5 w-3.5 text-ai" />
               LLM Backend
             </Label>
-            <Select value={llmBackend} onValueChange={(v: string | null) => v && setLLMBackend(v === 'mediapipe' ? 'mediapipe' : 'transformers')}>
+            <Select
+              value={llmBackend}
+              onValueChange={(v: string | null) => {
+                if (v === 'mediapipe' || v === 'ollama' || v === 'transformers') setLLMBackend(v);
+              }}
+            >
               <SelectTrigger id="llm-backend" className="h-11 bg-secondary border-transparent">
                 <SelectValue placeholder="Select a backend" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="transformers">Transformers.js</SelectItem>
                 <SelectItem value="mediapipe">MediaPipe</SelectItem>
+                <SelectItem value="ollama">Ollama</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -220,7 +231,7 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
-          ) : (
+          ) : llmBackend === 'mediapipe' ? (
             <div className="flex flex-col gap-3">
               <Label className="flex items-center gap-2">
                 <HardDrive className="h-3.5 w-3.5 text-ai" />
@@ -264,6 +275,35 @@ export default function SettingsPage() {
                 <Info className="h-3 w-3 mt-0.5 shrink-0" />
                 MediaPipe runs local Gemma models with WebGPU. Chromium can remember the file handle;
                 other browsers may ask you to reselect the file.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <Label htmlFor="ollama-url" className="flex items-center gap-2">
+                <Server className="h-3.5 w-3.5 text-ai" />
+                Ollama Server
+              </Label>
+              <Input
+                id="ollama-url"
+                value={ollamaUrl}
+                onChange={(event) => setOllamaUrl(event.target.value)}
+                placeholder="http://localhost:11434"
+                className="h-11 bg-secondary border-transparent"
+              />
+              <Label htmlFor="ollama-model" className="flex items-center gap-2">
+                <Bot className="h-3.5 w-3.5 text-ai" />
+                Ollama Model
+              </Label>
+              <Input
+                id="ollama-model"
+                value={ollamaModel}
+                onChange={(event) => setOllamaModel(event.target.value)}
+                placeholder="llama3.2"
+                className="h-11 bg-secondary border-transparent"
+              />
+              <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+                <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                Start Ollama locally and pull the model first, for example: ollama pull {ollamaModel || 'llama3.2'}.
               </p>
             </div>
           )}
@@ -328,7 +368,8 @@ export default function SettingsPage() {
 
           <div className="text-xs text-muted-foreground bg-secondary/50 rounded-xl p-3 leading-relaxed mt-2">
             Transformers models download on first use and cache in your browser. MediaPipe models
-            are selected from your local filesystem and are not stored in localStorage.
+            are selected from your local filesystem. Ollama requests go directly from this browser
+            to your configured local server.
           </div>
         </div>
       </main>

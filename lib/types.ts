@@ -22,10 +22,12 @@ export interface AppSettings {
   sttModel: string;
   llmModel: string;
   llmBackend: LLMBackend;
+  ollamaUrl: string;
+  ollamaModel: string;
   mediapipeModel?: MediaPipeModelMetadata;
 }
 
-export type LLMBackend = "transformers" | "mediapipe";
+export type LLMBackend = "transformers" | "mediapipe" | "ollama";
 
 export interface MediaPipeModelMetadata {
   name: string;

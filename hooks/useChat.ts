@@ -18,6 +18,8 @@ import type { ToolStore } from '@/lib/ai/tools';
 interface BrowserLLMSnapshot {
   backend: LLMBackend;
   modelId: string;
+  ollamaUrl: string;
+  ollamaModel: string;
   games: Game[];
   currentGame: Game | undefined;
   tools: ToolSet;
@@ -105,6 +107,18 @@ interface MediaPipeToolResult {
   success: boolean;
   message: string;
   data?: unknown;
+}
+
+interface OllamaMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+interface OllamaChatResponse {
+  message?: {
+    content?: string;
+  };
+  error?: string;
 }
 
 function resolvePlayer(name: string, players: Player[]): Player | undefined {
@@ -197,6 +211,33 @@ Players: ${playerNames}
 Tools: add_round {"scores":{"Name":1}}, undo_last_round {}, get_leaderboard {}, navigate {"view":"scoring|leaderboard|chart|table"}.
 If no tool is needed output {"response":"short answer"}.
 User: ${userText}`;
+}
+
+function normalizeOllamaUrl(url: string): string {
+  const trimmed = url.trim().replace(/\/+$/, '');
+  return trimmed.length > 0 ? trimmed : 'http://localhost:11434';
+}
+
+function buildOllamaMessages(
+  games: Game[],
+  currentGame: Game | undefined,
+  messages: UIMessage[],
+  toolResults: MediaPipeToolResult[],
+  mode: 'tool' | 'final',
+): OllamaMessage[] {
+  return [
+    { role: 'system', content: buildSystemPrompt(games, currentGame) },
+    { role: 'user', content: buildMediaPipePrompt(games, currentGame, messages, toolResults, mode) },
+  ];
+}
+
+function parseOllamaChatResponse(value: unknown): OllamaChatResponse {
+  const object = recordFromUnknown(value);
+  const message = recordFromUnknown(object.message);
+  return {
+    message: typeof message.content === 'string' ? { content: message.content } : undefined,
+    error: typeof object.error === 'string' ? object.error : undefined,
+  };
 }
 
 async function executeMediaPipeTool(
@@ -580,12 +621,161 @@ class BrowserLLMTransport implements ChatTransport<UIMessage> {
     });
   }
 
+  private async generateWithOllama(
+    messages: OllamaMessage[],
+    stream: boolean,
+    writer?: UIMessageStreamWriter<UIMessage>,
+    textPartId?: string,
+    abortSignal?: AbortSignal,
+  ): Promise<string> {
+    const url = `${normalizeOllamaUrl(this.snapshot.ollamaUrl)}/api/chat`;
+    const model = this.snapshot.ollamaModel.trim();
+    if (!model) throw new Error('Enter an Ollama model name in Settings.');
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages,
+        stream,
+        options: {
+          temperature: 0.3,
+          num_predict: stream ? MEDIAPIPE_FINAL_RESPONSE_MAX_TOKENS : MEDIAPIPE_TOOL_DECISION_MAX_TOKENS,
+        },
+      }),
+      signal: abortSignal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Ollama request failed with ${response.status}.`);
+    }
+
+    if (!stream) {
+      const result = parseOllamaChatResponse(await response.json());
+      if (result.error) throw new Error(result.error);
+      return result.message?.content ?? '';
+    }
+
+    if (!response.body) throw new Error('Ollama did not return a response body.');
+
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+    const outputId = textPartId ?? crypto.randomUUID();
+    let buffer = '';
+    let fullText = '';
+
+    try {
+      while (true) {
+        const readResult = await reader.read();
+        if (readResult.done) break;
+        buffer += readResult.value;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const chunk = parseOllamaChatResponse(JSON.parse(trimmed) as unknown);
+          if (chunk.error) throw new Error(chunk.error);
+          const delta = chunk.message?.content ?? '';
+          if (!delta) continue;
+          fullText += delta;
+          writer?.write({ type: 'text-delta', id: outputId, delta });
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return fullText;
+  }
+
+  private async sendOllamaMessages(
+    messages: UIMessage[],
+    abortSignal: AbortSignal | undefined,
+  ): Promise<ReadableStream<UIMessageChunk>> {
+    return createUIMessageStream({
+      execute: async ({ writer }) => {
+        const textId = crypto.randomUUID();
+        writer.write({ type: 'start' });
+        writer.write({ type: 'start-step' });
+
+        const toolResults: MediaPipeToolResult[] = [];
+        try {
+          for (let step = 0; step < 5; step += 1) {
+            this.snapshot.updateStatus('Thinking...');
+            const decisionMessages = buildOllamaMessages(
+              this.snapshot.games,
+              this.snapshot.currentGame,
+              messages,
+              toolResults,
+              'tool',
+            );
+            const decisionText = await this.generateWithOllama(decisionMessages, false, undefined, undefined, abortSignal);
+            const decision = parseMediaPipeToolRequest(decisionText);
+
+            if ('response' in decision) {
+              this.snapshot.updateStatus('');
+              writer.write({ type: 'text-start', id: textId });
+              writer.write({ type: 'text-delta', id: textId, delta: decision.response });
+              writer.write({ type: 'text-end', id: textId });
+              writer.write({ type: 'finish-step' });
+              writer.write({ type: 'finish', finishReason: 'stop' });
+              return;
+            }
+
+            const toolResult = await executeMediaPipeTool(decision, this.snapshot);
+            toolResults.push(toolResult);
+
+            writer.write({ type: 'text-start', id: `tool-${step}` });
+            writer.write({ type: 'text-delta', id: `tool-${step}`, delta: `\n> ${toolResult.message}\n` });
+            writer.write({ type: 'text-end', id: `tool-${step}` });
+
+            if (!toolResult.success) {
+              this.snapshot.updateStatus('');
+              break;
+            }
+          }
+
+          this.snapshot.updateStatus('Generating response...');
+          writer.write({ type: 'text-start', id: textId });
+          const finalMessages = buildOllamaMessages(
+            this.snapshot.games,
+            this.snapshot.currentGame,
+            messages,
+            toolResults,
+            'final',
+          );
+          await this.generateWithOllama(finalMessages, true, writer, textId, abortSignal);
+          writer.write({ type: 'text-end', id: textId });
+          writer.write({ type: 'finish-step' });
+          writer.write({ type: 'finish', finishReason: 'stop' });
+        } catch (err) {
+          writer.write({
+            type: 'error',
+            errorText:
+              err instanceof Error
+                ? err.message
+                : 'Ollama generation failed. Check that the local server is running and accessible.',
+          });
+        } finally {
+          this.snapshot.updateStatus('');
+          this.snapshot.hideDialog();
+        }
+      },
+    });
+  }
+
   async sendMessages({
     messages,
     abortSignal,
   }: Parameters<ChatTransport<UIMessage>['sendMessages']>[0]): Promise<ReadableStream<UIMessageChunk>> {
     if (this.snapshot.backend === 'mediapipe') {
       return this.sendMediaPipeMessages(messages, abortSignal);
+    }
+    if (this.snapshot.backend === 'ollama') {
+      return this.sendOllamaMessages(messages, abortSignal);
     }
 
     const { modelId, games, currentGame, tools, updateStatus, hideDialog } = this.snapshot;
@@ -644,6 +834,8 @@ export function useChat() {
   const games = useGameStore((s) => s.games);
   const llmModel = useSettingsStore((s) => s.llmModel);
   const llmBackend = useSettingsStore((s) => s.llmBackend);
+  const ollamaUrl = useSettingsStore((s) => s.ollamaUrl);
+  const ollamaModel = useSettingsStore((s) => s.ollamaModel);
   const { showDialog, hideDialog, updateStatus } = useModelDownloadStore();
   const addRound = useGameStore((s) => s.addRound);
   const updateRound = useGameStore((s) => s.updateRound);
@@ -686,6 +878,8 @@ export function useChat() {
       new BrowserLLMTransport({
         backend: llmBackend,
         modelId: llmModel,
+        ollamaUrl,
+        ollamaModel,
         games,
         currentGame,
         tools,
@@ -701,6 +895,8 @@ export function useChat() {
     transport.setSnapshot({
       backend: llmBackend,
       modelId: llmModel,
+      ollamaUrl,
+      ollamaModel,
       games,
       currentGame,
       tools,
@@ -716,6 +912,8 @@ export function useChat() {
     hideDialog,
     llmBackend,
     llmModel,
+    ollamaModel,
+    ollamaUrl,
     navigate,
     showDialog,
     store,
