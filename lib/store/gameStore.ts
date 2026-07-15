@@ -19,6 +19,7 @@ interface GameState {
 
   addRound: (gameId: string, scores: Record<string, number>) => void;
   updateRound: (gameId: string, roundId: string, scores: Record<string, number>) => void;
+  deleteRound: (gameId: string, roundId: string) => void;
   undoLastRound: (gameId: string) => void;
 }
 
@@ -113,6 +114,20 @@ export const useGameStore = create<GameState>()(
                   rounds: g.rounds.map((r) =>
                     r.id !== roundId ? r : { ...r, scores },
                   ),
+                },
+          ),
+        })),
+
+      deleteRound: (gameId, roundId) =>
+        set((s) => ({
+          games: s.games.map((g) =>
+            g.id !== gameId
+              ? g
+              : {
+                  ...g,
+                  rounds: g.rounds
+                    .filter((r) => r.id !== roundId)
+                    .map((r, index) => ({ ...r, number: index + 1 })),
                 },
           ),
         })),
