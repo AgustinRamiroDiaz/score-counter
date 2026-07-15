@@ -3,7 +3,8 @@
 import dynamic from 'next/dynamic';
 import { useMemo, useState } from 'react';
 import { useGame } from '@/hooks/useGame';
-import { cn } from '@/lib/utils';
+import type { Props as LabelProps } from 'recharts/types/component/Label';
+import type { Player } from '@/lib/types';
 
 const LineChart = dynamic(
   () => import('recharts').then((m) => m.LineChart),
@@ -14,6 +15,7 @@ const XAxis = dynamic(() => import('recharts').then((m) => m.XAxis), { ssr: fals
 const YAxis = dynamic(() => import('recharts').then((m) => m.YAxis), { ssr: false });
 const CartesianGrid = dynamic(() => import('recharts').then((m) => m.CartesianGrid), { ssr: false });
 const Tooltip = dynamic(() => import('recharts').then((m) => m.Tooltip), { ssr: false });
+const LabelList = dynamic(() => import('recharts').then((m) => m.LabelList), { ssr: false });
 const ResponsiveContainer = dynamic(
   () => import('recharts').then((m) => m.ResponsiveContainer),
   { ssr: false },
@@ -29,13 +31,23 @@ interface Props {
   gameId: string;
 }
 
+function labelCoordinate(value: LabelProps['x'] | LabelProps['y']): number | null {
+  const coordinate = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(coordinate) ? coordinate : null;
+}
+
 export function RoundChart({ gameId }: Props) {
   const { game } = useGame(gameId);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
 
   const chartData = useMemo(() => {
     if (!game || game.rounds.length === 0) return [];
-    return game.rounds.map((round, roundIdx) => {
+    const zeroPoint: Record<string, number | string> = { round: 'Start' };
+    for (const player of game.players) {
+      zeroPoint[player.id] = 0;
+    }
+
+    const roundPoints = game.rounds.map((round, roundIdx) => {
       const point: Record<string, number | string> = { round: `R${round.number}` };
       for (const p of game.players) {
         let cum = 0;
@@ -46,6 +58,7 @@ export function RoundChart({ gameId }: Props) {
       }
       return point;
     });
+    return [zeroPoint, ...roundPoints];
   }, [game]);
 
   if (!game) return null;
@@ -67,33 +80,34 @@ export function RoundChart({ gameId }: Props) {
       return next;
     });
 
-  return (
-    <div className="flex flex-col gap-4 p-4">
-      {/* Legend */}
-      <div className="flex flex-wrap gap-2">
-        {game.players.map((p, i) => (
-          <button
-            key={p.id}
-            type="button"
-            className={cn(
-              'h-7 px-3 rounded-full text-xs font-semibold border transition-opacity select-none',
-              hidden.has(p.id) && 'opacity-30',
-            )}
-            style={{
-              borderColor: COLORS[i % COLORS.length],
-              color: COLORS[i % COLORS.length],
-            }}
-            onClick={() => togglePlayer(p.id)}
-          >
-            {p.name}
-          </button>
-        ))}
-      </div>
+  const lastPointIndex = chartData.length - 1;
+  const renderLastPointLabel = (player: Player, color: string) => {
+    function LastPointLabel(props: LabelProps) {
+      if (props.index !== lastPointIndex) return null;
+      const x = labelCoordinate(props.x);
+      const y = labelCoordinate(props.y);
+      if (x === null || y === null) return null;
+      return (
+        <text
+          x={x - 4}
+          y={y - 12}
+          fill={color}
+          fontSize={12}
+          fontWeight={700}
+          textAnchor="end"
+        >
+          {player.name} {Number(props.value ?? 0)}
+        </text>
+      );
+    }
+    return LastPointLabel;
+  };
 
-      {/* Chart */}
-      <div className="w-full h-72">
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <div className="w-full h-72 min-w-0">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 5, right: 16, left: -10, bottom: 5 }}>
+          <LineChart data={chartData} margin={{ top: 24, right: 16, left: -10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
             <XAxis
               dataKey="round"
@@ -129,7 +143,13 @@ export function RoundChart({ gameId }: Props) {
                 activeDot={{ r: 6 }}
                 hide={hidden.has(p.id)}
                 name={p.id}
-              />
+                onClick={() => togglePlayer(p.id)}
+              >
+                <LabelList
+                  dataKey={p.id}
+                  content={renderLastPointLabel(p, COLORS[i % COLORS.length])}
+                />
+              </Line>
             ))}
           </LineChart>
         </ResponsiveContainer>
