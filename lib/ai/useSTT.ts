@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { STTWorkerOutput } from '@/lib/types';
 import { useSettingsStore } from '@/lib/store/settingsStore';
 import { useModelDownloadStore } from '@/lib/store/modelDownloadStore';
-import { isModelCached } from '@/lib/config/models';
+import { isModelCached, normalizeSTTModelId } from '@/lib/config/models';
 
 export interface STTStatus {
   loading: boolean;
@@ -17,6 +17,7 @@ export function useSTT() {
   const [sttStatus, setSTTStatus] = useState<STTStatus>({ loading: false, status: 'idle' });
   const sttModel = useSettingsStore((s) => s.sttModel);
   const { showDialog, hideDialog, updateStatus } = useModelDownloadStore();
+  const resolvedSTTModel = normalizeSTTModelId(sttModel);
 
   useEffect(() => {
     const worker = new Worker(new URL('../workers/stt.worker.ts', import.meta.url));
@@ -37,7 +38,7 @@ export function useSTT() {
       if (!worker) return;
 
       const startDownload = () => {
-        worker.postMessage({ type: 'transcribe', audio, sampleRate, modelId: sttModel });
+        worker.postMessage({ type: 'transcribe', audio, sampleRate, modelId: resolvedSTTModel });
       };
 
       const cancelDownload = () => {
@@ -46,13 +47,13 @@ export function useSTT() {
         setSTTStatus({ loading: false, status: 'idle' });
       };
 
-      const cached = await isModelCached(sttModel);
+      const cached = await isModelCached(resolvedSTTModel);
 
       if (cached) {
         startDownload();
       } else {
         showDialog({
-          modelId: sttModel,
+          modelId: resolvedSTTModel,
           modelType: 'stt',
           confirmDownload: startDownload,
           cancelDownload,
@@ -71,19 +72,22 @@ export function useSTT() {
         } else if (msg.type === 'error') {
           setSTTStatus({ loading: false, status: 'error' });
           updateStatus('error');
+          hideDialog();
+          callbacks.onError(msg.message);
         }
       };
     },
-    [sttModel, showDialog, hideDialog, updateStatus],
+    [resolvedSTTModel, showDialog, hideDialog, updateStatus],
   );
 
   const load = useCallback(
     (modelId: string, onDone?: () => void) => {
       const worker = workerRef.current;
       if (!worker) return;
+      const resolvedModelId = normalizeSTTModelId(modelId);
 
       const startDownload = () => {
-        worker.postMessage({ type: 'load', modelId });
+        worker.postMessage({ type: 'load', modelId: resolvedModelId });
       };
 
       const cancelDownload = () => {
@@ -93,7 +97,7 @@ export function useSTT() {
       };
 
       showDialog({
-        modelId,
+        modelId: resolvedModelId,
         modelType: 'stt',
         confirmDownload: startDownload,
         cancelDownload,

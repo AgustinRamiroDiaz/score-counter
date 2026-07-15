@@ -3,7 +3,13 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSettingsStore } from '@/lib/store/settingsStore';
-import { LLM_MODELS, STT_MODELS, getModelPreset, isModelCached } from '@/lib/config/models';
+import {
+  LLM_MODELS,
+  STT_MODELS,
+  getModelPreset,
+  isModelCached,
+  normalizeSTTModelId,
+} from '@/lib/config/models';
 import { useLLM } from '@/lib/ai/useLLM';
 import { useSTT } from '@/lib/ai/useSTT';
 import { Button } from '@/components/ui/button';
@@ -39,6 +45,7 @@ export default function SettingsPage() {
 
   const [cachedModels, setCachedModels] = useState<Record<string, boolean>>({});
   const transformersModels = useMemo(() => LLM_MODELS.filter((m) => m.backend === 'transformers'), []);
+  const resolvedSTTModel = normalizeSTTModelId(sttModel);
 
   const refreshCacheStatus = useCallback(async () => {
     const status: Record<string, boolean> = {};
@@ -80,11 +87,17 @@ export default function SettingsPage() {
     }
   }, [llmBackend, llmModel, setLLMModel, transformersModels]);
 
+  useEffect(() => {
+    if (resolvedSTTModel !== sttModel) {
+      setSTTModel(resolvedSTTModel);
+    }
+  }, [resolvedSTTModel, setSTTModel, sttModel]);
+
   const llmPreset = getModelPreset(llmModel, 'llm');
-  const sttPreset = getModelPreset(sttModel, 'stt');
+  const sttPreset = getModelPreset(resolvedSTTModel, 'stt');
 
   const isLLMCached = cachedModels[llmModel];
-  const isSTTCached = cachedModels[sttModel];
+  const isSTTCached = cachedModels[resolvedSTTModel];
 
   return (
     <div className="min-h-dvh flex flex-col max-w-lg mx-auto">
@@ -216,7 +229,7 @@ export default function SettingsPage() {
               <Mic className="h-3.5 w-3.5 text-ai" />
               Speech-to-Text Model
             </Label>
-            <Select value={sttModel} onValueChange={(v: string | null) => v && setSTTModel(v)}>
+            <Select value={resolvedSTTModel} onValueChange={(v: string | null) => v && setSTTModel(v)}>
               <SelectTrigger id="stt-model" className="h-11 bg-secondary border-transparent">
                 <SelectValue placeholder="Select a model" />
               </SelectTrigger>
@@ -257,7 +270,7 @@ export default function SettingsPage() {
                     variant="outline"
                     size="sm"
                     className="h-8 gap-1.5 text-xs"
-                    onClick={() => loadSTT(sttModel, refreshCacheStatus)}
+                    onClick={() => loadSTT(resolvedSTTModel, refreshCacheStatus)}
                   >
                     <Download className="h-3 w-3" />
                     Download Now

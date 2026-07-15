@@ -97,7 +97,7 @@ Unrecognized or ambiguous input prompts a clarification question before executin
 ### 8. Settings
 
 - **Active game**: switch between saved games or delete them.
-- **AI models**: select STT model and LLM from a dropdown; default values are `openai/whisper-base` and `HuggingFaceTB/SmolLM3-3B`.
+- **AI models**: select STT model and LLM from a dropdown; default values are `onnx-community/whisper-base` and `HuggingFaceTB/SmolLM3-3B`.
 - **Model download status**: progress bar shown on first use; cached thereafter.
 - **Chat history**: option to clear conversation log.
 

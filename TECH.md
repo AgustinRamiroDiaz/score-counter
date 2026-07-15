@@ -11,7 +11,7 @@
 | Charts | Recharts | React-native, SSR-safe with dynamic import |
 | AI inference | Transformers.js (`@huggingface/transformers`) | Runs models in a Web Worker; zero server calls |
 | AI orchestration | Vercel AI SDK (`ai`) | Provides `useChat`, tool-calling schema, and streaming primitives |
-| STT | `openai/whisper-base` (default, configurable) | Loaded via Transformers.js `pipeline('automatic-speech-recognition')` |
+| STT | `onnx-community/whisper-base` (default, configurable) | Loaded via Transformers.js `pipeline('automatic-speech-recognition')` |
 | LLM | `HuggingFaceTB/SmolLM3-3B` (default, configurable) | Loaded via Transformers.js `pipeline('text-generation')` with tool-calling |
 
 ---
@@ -111,7 +111,7 @@ export interface Game {
 }
 
 export interface AppSettings {
-  sttModel: string;          // default: 'openai/whisper-base'
+  sttModel: string;          // default: 'onnx-community/whisper-base'
   llmModel: string;          // default: 'HuggingFaceTB/SmolLM3-3B'
 }
 ```

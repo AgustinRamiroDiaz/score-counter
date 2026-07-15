@@ -11,7 +11,7 @@ test('chat answers the "What can you do?" prompt', async ({ page }) => {
       JSON.stringify({
         state: {
           llmModel: modelId,
-          sttModel: "openai/whisper-tiny",
+          sttModel: "onnx-community/whisper-tiny",
         },
         version: 0,
       }),

@@ -71,27 +71,37 @@ export const LLM_MODELS: ModelPreset[] = [
 
 export const STT_MODELS: ModelPreset[] = [
   {
-    id: "openai/whisper-base",
+    id: "onnx-community/whisper-base",
     label: "Whisper Base",
     description: "Good accuracy, moderate size.",
     size: "~140 MB",
     sizeBytes: 140_000_000,
   },
   {
-    id: "openai/whisper-small",
+    id: "onnx-community/whisper-small",
     label: "Whisper Small",
     description: "Better accuracy, larger download.",
     size: "~460 MB",
     sizeBytes: 460_000_000,
   },
   {
-    id: "openai/whisper-tiny",
+    id: "onnx-community/whisper-tiny",
     label: "Whisper Tiny",
     description: "Fastest, smallest. Lower accuracy.",
     size: "~75 MB",
     sizeBytes: 75_000_000,
   },
 ];
+
+const LEGACY_STT_MODEL_IDS: Record<string, string> = {
+  "openai/whisper-base": "onnx-community/whisper-base",
+  "openai/whisper-small": "onnx-community/whisper-small",
+  "openai/whisper-tiny": "onnx-community/whisper-tiny",
+};
+
+export function normalizeSTTModelId(modelId: string): string {
+  return LEGACY_STT_MODEL_IDS[modelId] ?? modelId;
+}
 
 export function getModelPreset(
   id: string,

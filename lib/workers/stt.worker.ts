@@ -12,6 +12,7 @@ async function loadModel(modelId: string) {
   const post = (msg: STTWorkerOutput) => self.postMessage(msg);
   post({ type: 'status', message: 'Loading STT model…', progress: 0 });
   transcriber = (await pipeline('automatic-speech-recognition', modelId, {
+    dtype: 'fp32',
     progress_callback: (p: { progress?: number; status?: string }) => {
       post({ type: 'status', message: p.status ?? 'Loading…', progress: p.progress });
     },
@@ -40,7 +41,11 @@ self.onmessage = async (e: MessageEvent<STTWorkerInput>) => {
   const { type } = e.data;
   if (type === 'transcribe') {
     try {
-      await transcribe(e.data.audio, e.data.sampleRate, e.data.modelId ?? 'openai/whisper-base');
+      await transcribe(
+        e.data.audio,
+        e.data.sampleRate,
+        e.data.modelId ?? 'onnx-community/whisper-base',
+      );
     } catch (err) {
       self.postMessage({ type: 'error', message: String(err) } satisfies STTWorkerOutput);
     }
