@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useGame } from '@/hooks/useGame';
 import type { Props as LabelProps } from 'recharts/types/component/Label';
 import type { Player } from '@/lib/types';
@@ -16,10 +16,6 @@ const YAxis = dynamic(() => import('recharts').then((m) => m.YAxis), { ssr: fals
 const CartesianGrid = dynamic(() => import('recharts').then((m) => m.CartesianGrid), { ssr: false });
 const Tooltip = dynamic(() => import('recharts').then((m) => m.Tooltip), { ssr: false });
 const LabelList = dynamic(() => import('recharts').then((m) => m.LabelList), { ssr: false });
-const ResponsiveContainer = dynamic(
-  () => import('recharts').then((m) => m.ResponsiveContainer),
-  { ssr: false },
-);
 
 // Warm dark palette — amber, emerald, coral, sky, violet, lime, orange, teal
 const COLORS = [
@@ -39,6 +35,8 @@ function labelCoordinate(value: LabelProps['x'] | LabelProps['y']): number | nul
 export function RoundChart({ gameId }: Props) {
   const { game } = useGame(gameId);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const chartShellRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(0);
 
   const chartData = useMemo(() => {
     if (!game || game.rounds.length === 0) return [];
@@ -60,6 +58,24 @@ export function RoundChart({ gameId }: Props) {
     });
     return [zeroPoint, ...roundPoints];
   }, [game]);
+
+  useEffect(() => {
+    const element = chartShellRef.current;
+    if (!element) return;
+
+    const updateWidth = () => {
+      setChartWidth(Math.floor(element.getBoundingClientRect().width));
+    };
+    updateWidth();
+
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      setChartWidth(Math.floor(width));
+    });
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
 
   if (!game) return null;
 
@@ -105,9 +121,9 @@ export function RoundChart({ gameId }: Props) {
 
   return (
     <div className="flex flex-col gap-3 p-4">
-      <div className="w-full h-72 min-w-0">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 24, right: 16, left: -10, bottom: 5 }}>
+      <div ref={chartShellRef} className="w-full h-72 min-w-0">
+        {chartWidth > 0 && (
+          <LineChart width={chartWidth} height={288} data={chartData} margin={{ top: 24, right: 16, left: -10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
             <XAxis
               dataKey="round"
@@ -152,7 +168,7 @@ export function RoundChart({ gameId }: Props) {
               </Line>
             ))}
           </LineChart>
-        </ResponsiveContainer>
+        )}
       </div>
     </div>
   );
