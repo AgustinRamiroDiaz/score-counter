@@ -5,13 +5,15 @@ import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Loader2 } from 'lucide-react';
 import { useSTT } from '@/lib/ai/useSTT';
 import { cn } from '@/lib/utils';
+import type { STTLanguage } from '@/lib/types';
 
 interface Props {
   onTranscript: (text: string) => void;
+  language: STTLanguage;
   disabled?: boolean;
 }
 
-export function MicButton({ onTranscript, disabled }: Props) {
+export function MicButton({ onTranscript, language, disabled }: Props) {
   const [recording, setRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -34,7 +36,7 @@ export function MicButton({ onTranscript, disabled }: Props) {
         const arrayBuffer = await blob.arrayBuffer();
         const audioCtx = new AudioContext({ sampleRate: 16000 });
         const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        transcribe(audioBuffer.getChannelData(0), audioBuffer.sampleRate, {
+        transcribe(audioBuffer.getChannelData(0), audioBuffer.sampleRate, language, {
           onTranscript,
           onError: (msg) => console.error('STT error:', msg),
         });
@@ -45,7 +47,7 @@ export function MicButton({ onTranscript, disabled }: Props) {
     } catch (err) {
       console.error('Mic access denied:', err);
     }
-  }, [transcribe, onTranscript]);
+  }, [transcribe, onTranscript, language]);
 
   const stopRecording = useCallback(() => {
     mediaRecorderRef.current?.stop();

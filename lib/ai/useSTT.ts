@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { STTWorkerOutput } from '@/lib/types';
+import type { STTLanguage, STTWorkerOutput } from '@/lib/types';
 import { useSettingsStore } from '@/lib/store/settingsStore';
 import { useModelDownloadStore } from '@/lib/store/modelDownloadStore';
 import { isModelCached, normalizeSTTModelId } from '@/lib/config/models';
@@ -29,6 +29,7 @@ export function useSTT() {
     async (
       audio: Float32Array,
       sampleRate: number,
+      language: STTLanguage,
       callbacks: {
         onTranscript: (text: string) => void;
         onError: (msg: string) => void;
@@ -38,7 +39,13 @@ export function useSTT() {
       if (!worker) return;
 
       const startDownload = () => {
-        worker.postMessage({ type: 'transcribe', audio, sampleRate, modelId: resolvedSTTModel });
+        worker.postMessage({
+          type: 'transcribe',
+          audio,
+          sampleRate,
+          language,
+          modelId: resolvedSTTModel,
+        });
       };
 
       const cancelDownload = () => {

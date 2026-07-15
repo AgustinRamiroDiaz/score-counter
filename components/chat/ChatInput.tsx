@@ -3,9 +3,17 @@
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { MicButton } from './MicButton';
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp, Languages } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { STTLanguage } from '@/lib/types';
 
 interface Props {
   onSend: (text: string) => void;
@@ -15,6 +23,7 @@ interface Props {
 
 export function ChatInput({ onSend, disabled, placeholder = 'Ask anything…' }: Props) {
   const [value, setValue] = useState('');
+  const [sttLanguage, setSTTLanguage] = useState<STTLanguage>('en');
   const inputRef = useRef<HTMLInputElement>(null);
 
   const submit = () => {
@@ -28,12 +37,32 @@ export function ChatInput({ onSend, disabled, placeholder = 'Ask anything…' }:
   return (
     <div className="flex items-center gap-2 p-3 border-t border-border bg-card/80 backdrop-blur shrink-0">
       <MicButton
+        language={sttLanguage}
         onTranscript={(text) => {
           setValue((v) => (v ? `${v} ${text}` : text));
           inputRef.current?.focus();
         }}
         disabled={disabled}
       />
+      <Select
+        value={sttLanguage}
+        onValueChange={(next: string | null) => {
+          if (next === 'en' || next === 'es') setSTTLanguage(next);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger
+          aria-label="Speech language"
+          className="h-10 w-[76px] shrink-0 bg-secondary border-transparent px-2 text-xs focus:ring-ai/30"
+        >
+          <Languages className="h-3.5 w-3.5 text-muted-foreground" />
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="en">EN</SelectItem>
+          <SelectItem value="es">ES</SelectItem>
+        </SelectContent>
+      </Select>
       <Input
         ref={inputRef}
         value={value}

@@ -1,4 +1,4 @@
-import type { STTWorkerInput, STTWorkerOutput } from '@/lib/types';
+import type { STTLanguage, STTWorkerInput, STTWorkerOutput } from '@/lib/types';
 import type { AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
 import { pipeline, env } from '@huggingface/transformers';
 
@@ -21,7 +21,12 @@ async function loadModel(modelId: string) {
   post({ type: 'status', message: 'STT model ready' });
 }
 
-async function transcribe(audio: Float32Array, sampleRate: number, modelId: string) {
+async function transcribe(
+  audio: Float32Array,
+  sampleRate: number,
+  modelId: string,
+  language: STTLanguage,
+) {
   const post = (msg: STTWorkerOutput) => self.postMessage(msg);
   await loadModel(modelId);
   if (!transcriber) throw new Error('STT model not loaded');
@@ -30,6 +35,8 @@ async function transcribe(audio: Float32Array, sampleRate: number, modelId: stri
     sampling_rate: sampleRate,
     chunk_length_s: 30,
     stride_length_s: 5,
+    language,
+    task: 'transcribe',
   });
 
   const output = Array.isArray(result) ? result[0] : result;
@@ -45,6 +52,7 @@ self.onmessage = async (e: MessageEvent<STTWorkerInput>) => {
         e.data.audio,
         e.data.sampleRate,
         e.data.modelId ?? 'onnx-community/whisper-base',
+        e.data.language,
       );
     } catch (err) {
       self.postMessage({ type: 'error', message: String(err) } satisfies STTWorkerOutput);

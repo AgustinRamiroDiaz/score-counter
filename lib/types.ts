@@ -28,6 +28,8 @@ export interface AppSettings {
 
 export type LLMBackend = "transformers" | "ollama";
 
+export type STTLanguage = "en" | "es";
+
 export interface GameSummary {
   id: string;
   name: string;
@@ -41,6 +43,7 @@ export type STTWorkerInput =
       audio: Float32Array;
       sampleRate: number;
       modelId?: string;
+      language: STTLanguage;
     }
   | { type: "load"; modelId: string }
   | { type: "abort" };
