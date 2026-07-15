@@ -145,9 +145,11 @@ function ScoringPageContent() {
           <Table className="min-w-max">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-36 pl-3">Round</TableHead>
+                <TableHead className="w-1 whitespace-nowrap px-3 text-center">
+                  Round
+                </TableHead>
                 {game.players.map((player) => (
-                  <TableHead key={player.id} className="min-w-28">
+                  <TableHead key={player.id} className="min-w-28 text-center">
                     {player.name}
                   </TableHead>
                 ))}
@@ -155,7 +157,7 @@ function ScoringPageContent() {
             </TableHeader>
             <TableBody>
               <TableRow className="bg-primary/5 hover:bg-primary/10">
-                <TableCell className="pl-3">
+                <TableCell className="w-1 whitespace-nowrap px-3 text-center">
                   <Button
                     type="button"
                     size="sm"
@@ -167,7 +169,7 @@ function ScoringPageContent() {
                   </Button>
                 </TableCell>
                 {game.players.map((player) => (
-                  <TableCell key={player.id} className="min-w-28">
+                  <TableCell key={player.id} className="min-w-28 text-center">
                     <Input
                       type="number"
                       inputMode="numeric"
@@ -180,7 +182,7 @@ function ScoringPageContent() {
                           [player.id]: event.target.value,
                         }))
                       }
-                      className="h-9 w-24 bg-background text-center font-semibold tabular-nums"
+                      className="mx-auto h-9 w-24 bg-background text-center font-semibold tabular-nums"
                     />
                   </TableCell>
                 ))}
@@ -198,9 +200,9 @@ function ScoringPageContent() {
                     )}
                     onClick={() => handleEditStart(round)}
                   >
-                    <TableCell className="pl-3">
+                    <TableCell className="w-1 whitespace-nowrap px-3 text-center">
                       {isEditing ? (
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5">
                           <Button
                             type="button"
                             size="icon-sm"
@@ -239,7 +241,7 @@ function ScoringPageContent() {
                         <TableCell
                           key={player.id}
                           className={cn(
-                            "font-semibold tabular-nums",
+                            "text-center font-semibold tabular-nums",
                             !isEditing && score > 0 && "text-primary/90",
                             !isEditing && score < 0 && "text-destructive",
                           )}
@@ -257,7 +259,7 @@ function ScoringPageContent() {
                                   [player.id]: event.target.value,
                                 }))
                               }
-                              className="h-9 w-24 bg-background text-center font-semibold tabular-nums"
+                              className="mx-auto h-9 w-24 bg-background text-center font-semibold tabular-nums"
                             />
                           ) : (
                             formatScore(score)
