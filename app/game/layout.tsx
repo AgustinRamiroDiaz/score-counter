@@ -3,7 +3,6 @@
 import { Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useGameStore } from '@/lib/store/gameStore';
-import { BottomNav } from '@/components/layout/BottomNav';
 import { Button } from '@/components/ui/button';
 import { formatGameDate } from '@/lib/utils';
 import { ArrowLeft } from 'lucide-react';
@@ -49,9 +48,7 @@ function GameLayoutContent({ children }: Props) {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto pb-[56px]">{children}</main>
-
-      <BottomNav gameId={id ?? ''} />
+      <main className="flex-1 overflow-y-auto">{children}</main>
     </div>
   );
 }
