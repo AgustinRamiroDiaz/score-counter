@@ -75,7 +75,7 @@ export function RoundChart({ gameId }: Props) {
     observer.observe(element);
 
     return () => observer.disconnect();
-  }, []);
+  }, [game?.rounds.length]);
 
   if (!game) return null;
 
