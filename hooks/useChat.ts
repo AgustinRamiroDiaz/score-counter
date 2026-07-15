@@ -4,15 +4,15 @@ import { useChat as useVercelChat } from '@ai-sdk/react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { transformersJS } from '@browser-ai/transformers-js';
+import { createOllama } from 'ai-sdk-ollama';
+import { DirectChatTransport, ToolLoopAgent, isStepCount } from 'ai';
 import { useGameStore } from '@/lib/store/gameStore';
 import { useModelDownloadStore } from '@/lib/store/modelDownloadStore';
 import { useSettingsStore } from '@/lib/store/settingsStore';
-import { buildLeaderboard, createTools } from '@/lib/ai/tools';
-import { getRememberedMediaPipeModelFile } from '@/lib/ai/mediapipeModelFile';
-import { convertToModelMessages, createUIMessageStream, stepCountIs, streamText } from 'ai';
+import { createTools } from '@/lib/ai/tools';
 import { isModelCached } from '@/lib/config/models';
-import type { Game, GameSummary, LLMBackend, Player } from '@/lib/types';
-import type { ChatTransport, ToolSet, UIMessage, UIMessageChunk, UIMessageStreamWriter } from 'ai';
+import type { Game, GameSummary, LLMBackend } from '@/lib/types';
+import type { ChatTransport, LanguageModel, ToolSet, UIMessage, UIMessageChunk } from 'ai';
 import type { ToolStore } from '@/lib/ai/tools';
 
 interface BrowserLLMSnapshot {
@@ -23,8 +23,6 @@ interface BrowserLLMSnapshot {
   games: Game[];
   currentGame: Game | undefined;
   tools: ToolSet;
-  store: ToolStore;
-  navigate: (view: string, gameId?: string) => void;
   showDialog: (params: {
     modelId: string;
     modelType: 'llm';
@@ -79,264 +77,13 @@ IMPORTANT for add_round: include a score for every player. If any score is missi
 If no tool is needed, respond conversationally in one or two concise sentences.`;
 }
 
-type MediaPipeLLMWorkerOutput =
-  | { type: 'status'; message: string; progress?: number }
-  | { type: 'ready' }
-  | { type: 'delta'; requestId: string; text: string }
-  | { type: 'done'; requestId: string; text: string }
-  | { type: 'error'; requestId?: string; message: string };
-
-const MEDIAPIPE_TOOL_DECISION_MAX_TOKENS = 512;
-const MEDIAPIPE_FINAL_RESPONSE_MAX_TOKENS = 768;
-
-type MediaPipeToolName =
-  | 'create_game'
-  | 'add_round'
-  | 'update_round'
-  | 'undo_last_round'
-  | 'get_leaderboard'
-  | 'update_player'
-  | 'navigate';
-
-interface MediaPipeToolRequest {
-  tool: MediaPipeToolName;
-  input?: unknown;
-}
-
-interface MediaPipeToolResult {
-  success: boolean;
-  message: string;
-  data?: unknown;
-}
-
-interface OllamaMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
-
-interface OllamaChatResponse {
-  message?: {
-    content?: string;
-  };
-  error?: string;
-}
-
-function resolvePlayer(name: string, players: Player[]): Player | undefined {
-  const lower = name.toLowerCase();
-  return players.find(
-    (p) => p.name.toLowerCase() === lower || p.aliases.some((alias) => alias.toLowerCase() === lower),
-  );
-}
-
-function recordFromUnknown(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function numberRecordFromUnknown(value: unknown): Record<string, number> {
-  const input = recordFromUnknown(value);
-  return Object.fromEntries(
-    Object.entries(input).filter((entry): entry is [string, number] => typeof entry[1] === 'number'),
-  );
-}
-
-function stringArrayFromUnknown(value: unknown): string[] | undefined {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : undefined;
-}
-
-function parseMediaPipeToolRequest(text: string): MediaPipeToolRequest | { response: string } {
-  const trimmed = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
-  const parsed = JSON.parse(trimmed) as unknown;
-  const object = recordFromUnknown(parsed);
-  if (typeof object.response === 'string') return { response: object.response };
-  if (typeof object.tool !== 'string') throw new Error('No tool name in model response.');
-
-  const toolNames: MediaPipeToolName[] = [
-    'create_game',
-    'add_round',
-    'update_round',
-    'undo_last_round',
-    'get_leaderboard',
-    'update_player',
-    'navigate',
-  ];
-  if (!toolNames.includes(object.tool as MediaPipeToolName)) {
-    throw new Error(`Unknown tool: ${object.tool}`);
-  }
-  return { tool: object.tool as MediaPipeToolName, input: object.input };
-}
-
-function extractMessageText(message: UIMessage): string {
-  return message.parts
-    .filter((part) => part.type === 'text')
-    .map((part) => (part.type === 'text' ? part.text : ''))
-    .join('');
-}
-
-function buildMediaPipePrompt(
-  games: Game[],
-  currentGame: Game | undefined,
-  messages: UIMessage[],
-  toolResults: MediaPipeToolResult[],
-  mode: 'tool' | 'final',
-): string {
-  const latestUserText = [...messages]
-    .reverse()
-    .find((message) => message.role === 'user');
-  const userText = latestUserText ? extractMessageText(latestUserText) : '';
-  const toolResultText =
-    toolResults.length > 0
-      ? toolResults.map((result, index) => `${index + 1}. ${JSON.stringify(result)}`).join('\n')
-      : 'none';
-
-  if (mode === 'final') {
-    return `User: ${userText}
-Tool results: ${toolResultText}
-Answer in one short sentence.`;
-  }
-
-  if (!currentGame) {
-    const gameNames = games.map((game) => game.name).join(', ') || 'none';
-    return `Return strict JSON only.
-Existing games: ${gameNames}
-If user asks to create a game, output:
-{"tool":"create_game","input":{"name":"Game name","players":[{"name":"Alice","aliases":[]},{"name":"Bob","aliases":[]}]}}
-Otherwise output {"response":"short answer"}.
-User: ${userText}`;
-  }
-
-  const playerNames = currentGame.players.map((player) => player.name).join(', ');
-  return `Return strict JSON only.
-Game: ${currentGame.name}
-Players: ${playerNames}
-Tools: add_round {"scores":{"Name":1}}, undo_last_round {}, get_leaderboard {}, navigate {"view":"scoring|leaderboard|chart|table"}.
-If no tool is needed output {"response":"short answer"}.
-User: ${userText}`;
-}
-
 function normalizeOllamaUrl(url: string): string {
   const trimmed = url.trim().replace(/\/+$/, '');
   return trimmed.length > 0 ? trimmed : 'http://localhost:11434';
 }
 
-function buildOllamaMessages(
-  games: Game[],
-  currentGame: Game | undefined,
-  messages: UIMessage[],
-  toolResults: MediaPipeToolResult[],
-  mode: 'tool' | 'final',
-): OllamaMessage[] {
-  return [
-    { role: 'system', content: buildSystemPrompt(games, currentGame) },
-    { role: 'user', content: buildMediaPipePrompt(games, currentGame, messages, toolResults, mode) },
-  ];
-}
-
-function parseOllamaChatResponse(value: unknown): OllamaChatResponse {
-  const object = recordFromUnknown(value);
-  const message = recordFromUnknown(object.message);
-  return {
-    message: typeof message.content === 'string' ? { content: message.content } : undefined,
-    error: typeof object.error === 'string' ? object.error : undefined,
-  };
-}
-
-async function executeMediaPipeTool(
-  request: MediaPipeToolRequest,
-  snapshot: BrowserLLMSnapshot,
-): Promise<MediaPipeToolResult> {
-  const input = recordFromUnknown(request.input);
-  const game = snapshot.currentGame;
-
-  if (request.tool === 'create_game') {
-    const name = typeof input.name === 'string' ? input.name.trim() : '';
-    const playersInput = Array.isArray(input.players) ? input.players : [];
-    const players = playersInput
-      .map((player) => {
-        const playerInput = recordFromUnknown(player);
-        return {
-          name: typeof playerInput.name === 'string' ? playerInput.name.trim() : '',
-          aliases: stringArrayFromUnknown(playerInput.aliases) ?? [],
-        };
-      })
-      .filter((player) => player.name.length > 0);
-
-    if (!name || players.length < 2) {
-      return { success: false, message: 'A game name and at least two players are required.' };
-    }
-    const newId = snapshot.store.createGame(name, players);
-    snapshot.navigate('scoring', newId);
-    return { success: true, message: `Game "${name}" created with ${players.length} players.` };
-  }
-
-  if (!game) return { success: false, message: 'No active game.' };
-
-  if (request.tool === 'add_round') {
-    const scores = numberRecordFromUnknown(input.scores);
-    const resolvedScores: Record<string, number> = {};
-    const missing: string[] = [];
-
-    for (const player of game.players) {
-      const match = Object.entries(scores).find(([name]) => resolvePlayer(name, game.players)?.id === player.id);
-      if (match) {
-        resolvedScores[player.id] = match[1];
-      } else {
-        missing.push(player.name);
-      }
-    }
-    if (missing.length > 0) return { success: false, message: `Missing scores for: ${missing.join(', ')}` };
-    snapshot.store.addRound(game.id, resolvedScores);
-    return { success: true, message: `Round ${game.rounds.length + 1} recorded.` };
-  }
-
-  if (request.tool === 'update_round') {
-    const roundNumber = typeof input.round_number === 'number' ? input.round_number : 0;
-    const round = game.rounds.find((candidate) => candidate.number === roundNumber);
-    if (!round) return { success: false, message: `Round ${roundNumber} not found.` };
-    const resolvedScores: Record<string, number> = { ...round.scores };
-    for (const [name, score] of Object.entries(numberRecordFromUnknown(input.scores))) {
-      const player = resolvePlayer(name, game.players);
-      if (player) resolvedScores[player.id] = score;
-    }
-    snapshot.store.updateRound(game.id, round.id, resolvedScores);
-    return { success: true, message: `Round ${roundNumber} updated.` };
-  }
-
-  if (request.tool === 'undo_last_round') {
-    if (game.rounds.length === 0) return { success: false, message: 'No rounds to undo.' };
-    snapshot.store.undoLastRound(game.id);
-    return { success: true, message: 'Last round removed.' };
-  }
-
-  if (request.tool === 'get_leaderboard') {
-    const leaderboard = buildLeaderboard(game);
-    const summary = leaderboard.map((entry) => `${entry.rank}. ${entry.player.name}: ${entry.total}`).join('\n');
-    return { success: true, message: `Current standings:\n${summary}`, data: leaderboard };
-  }
-
-  if (request.tool === 'update_player') {
-    const target = typeof input.target === 'string' ? input.target : '';
-    const player = resolvePlayer(target, game.players);
-    if (!player) return { success: false, message: `Player "${target}" not found.` };
-    const name = typeof input.name === 'string' ? input.name : undefined;
-    const aliases = stringArrayFromUnknown(input.aliases);
-    snapshot.store.updatePlayer(game.id, player.id, {
-      ...(name ? { name } : {}),
-      ...(aliases ? { aliases } : {}),
-    });
-    return { success: true, message: 'Player updated.' };
-  }
-
-  const view = typeof input.view === 'string' ? input.view : '';
-  if (!['scoring', 'leaderboard', 'chart', 'table'].includes(view)) {
-    return { success: false, message: 'Unknown view.' };
-  }
-  snapshot.navigate(view, game.id);
-  return { success: true, message: `Navigated to ${view}.` };
-}
-
-class BrowserLLMTransport implements ChatTransport<UIMessage> {
+class BrowserAgentTransport implements ChatTransport<UIMessage> {
   private worker: Worker | null = null;
-  private mediaPipeWorker: Worker | null = null;
 
   constructor(private snapshot: BrowserLLMSnapshot) {}
 
@@ -347,9 +94,6 @@ class BrowserLLMTransport implements ChatTransport<UIMessage> {
   terminate() {
     this.worker?.terminate();
     this.worker = null;
-    this.mediaPipeWorker?.postMessage({ type: 'dispose' });
-    this.mediaPipeWorker?.terminate();
-    this.mediaPipeWorker = null;
   }
 
   private getWorker(): Worker {
@@ -357,18 +101,6 @@ class BrowserLLMTransport implements ChatTransport<UIMessage> {
       this.worker = new Worker(new URL('../lib/workers/llm.worker.ts', import.meta.url));
     }
     return this.worker;
-  }
-
-  private getMediaPipeWorker(): Worker {
-    if (!this.mediaPipeWorker) {
-      this.mediaPipeWorker = new Worker(new URL('../lib/workers/mediapipe-llm.worker.ts', import.meta.url));
-    }
-    return this.mediaPipeWorker;
-  }
-
-  private resetMediaPipeWorker(): void {
-    this.mediaPipeWorker?.terminate();
-    this.mediaPipeWorker = null;
   }
 
   private async confirmDownloadIfNeeded(modelId: string): Promise<boolean> {
@@ -387,441 +119,66 @@ class BrowserLLMTransport implements ChatTransport<UIMessage> {
     });
   }
 
-  private async loadMediaPipeModel(file: File): Promise<void> {
-    const worker = this.getMediaPipeWorker();
-    this.snapshot.updateStatus('Loading local MediaPipe model...', 0);
-
-    await new Promise<void>((resolve, reject) => {
-      const timeoutId = window.setTimeout(() => {
-        cleanup();
-        reject(new Error('MediaPipe model loading timed out.'));
-      }, 180_000);
-      const onMessage = (event: MessageEvent<MediaPipeLLMWorkerOutput>) => {
-        const message = event.data;
-        if (message.type === 'status') {
-          this.snapshot.updateStatus(message.message, message.progress);
-          return;
-        }
-        if (message.type === 'ready') {
-          cleanup();
-          this.snapshot.hideDialog();
-          resolve();
-          return;
-        }
-        if (message.type === 'error' && !message.requestId) {
-          cleanup();
-          this.snapshot.updateStatus('error');
-          reject(new Error(message.message));
-        }
-      };
-      const onError = () => {
-        cleanup();
-        this.snapshot.updateStatus('error');
-        reject(new Error('MediaPipe worker failed while loading the model.'));
-      };
-      const cleanup = () => {
-        window.clearTimeout(timeoutId);
-        worker.removeEventListener('message', onMessage);
-        worker.removeEventListener('error', onError);
-      };
-
-      worker.addEventListener('message', onMessage);
-      worker.addEventListener('error', onError);
-      worker.postMessage({ type: 'load', file });
-    });
-  }
-
-  private async generateWithMediaPipe(
-    prompt: string,
-    stream: boolean,
-    writer?: UIMessageStreamWriter<UIMessage>,
-    textPartId?: string,
-  ): Promise<string> {
-    const worker = this.getMediaPipeWorker();
-    const requestId = crypto.randomUUID();
-    const outputId = textPartId ?? requestId;
-
-    return new Promise<string>((resolve, reject) => {
-      const timeoutId = window.setTimeout(() => {
-        this.resetMediaPipeWorker();
-        cleanup();
-        reject(new Error('MediaPipe generation timed out.'));
-      }, 120_000);
-      const onAbort = () => {
-        worker.postMessage({ type: 'cancel' });
-        cleanup();
-        reject(new Error('Generation cancelled.'));
-      };
-      const onMessage = (event: MessageEvent<MediaPipeLLMWorkerOutput>) => {
-        const message = event.data;
-        if ('requestId' in message && message.requestId !== requestId) return;
-
-        if (message.type === 'delta') {
-          writer?.write({ type: 'text-delta', id: outputId, delta: message.text });
-          return;
-        }
-
-        if (message.type === 'done') {
-          cleanup();
-          resolve(message.text);
-          return;
-        }
-
-        if (message.type === 'error') {
-          cleanup();
-          reject(new Error(message.message));
-        }
-      };
-      const onError = () => {
-        cleanup();
-        reject(new Error('MediaPipe worker failed during generation.'));
-      };
-      const cleanup = () => {
-        window.clearTimeout(timeoutId);
-        worker.removeEventListener('message', onMessage);
-        worker.removeEventListener('error', onError);
-        this.currentAbortSignal?.removeEventListener('abort', onAbort);
-      };
-
-      worker.addEventListener('message', onMessage);
-      worker.addEventListener('error', onError);
-      this.currentAbortSignal?.addEventListener('abort', onAbort, { once: true });
-      worker.postMessage({
-        type: 'generate',
-        requestId,
-        prompt,
-        stream,
-        maxTokens: stream ? MEDIAPIPE_FINAL_RESPONSE_MAX_TOKENS : MEDIAPIPE_TOOL_DECISION_MAX_TOKENS,
-      });
-    });
-  }
-
-  private currentAbortSignal: AbortSignal | undefined;
-
-  private async sendMediaPipeMessages(
-    messages: UIMessage[],
-    abortSignal: AbortSignal | undefined,
-  ): Promise<ReadableStream<UIMessageChunk>> {
-    const file = await getRememberedMediaPipeModelFile();
-    if (!file) {
-      return createUIMessageStream({
-        execute: ({ writer }) => {
-          const text =
-            'Select a local Web-compatible Gemma .litertlm or .task file in Settings before using MediaPipe.';
-          const id = crypto.randomUUID();
-          writer.write({ type: 'start' });
-          writer.write({ type: 'start-step' });
-          writer.write({ type: 'text-start', id });
-          writer.write({ type: 'text-delta', id, delta: text });
-          writer.write({ type: 'text-end', id });
-          writer.write({ type: 'finish-step' });
-          writer.write({ type: 'finish', finishReason: 'stop' });
-        },
-      });
-    }
-
-    try {
-      await this.loadMediaPipeModel(file);
-    } catch (err) {
-      return createUIMessageStream({
-        execute: ({ writer }) => {
-          const id = crypto.randomUUID();
-          writer.write({ type: 'start' });
-          writer.write({ type: 'start-step' });
-          writer.write({ type: 'text-start', id });
-          writer.write({
-            type: 'text-delta',
-            id,
-            delta: err instanceof Error ? err.message : 'MediaPipe model failed to load.',
-          });
-          writer.write({ type: 'text-end', id });
-          writer.write({ type: 'finish-step' });
-          writer.write({ type: 'finish', finishReason: 'error' });
-        },
-      });
-    }
-    this.currentAbortSignal = abortSignal;
-
-    return createUIMessageStream({
-      execute: async ({ writer }) => {
-        const textId = crypto.randomUUID();
-        writer.write({ type: 'start' });
-        writer.write({ type: 'start-step' });
-
-        const toolResults: MediaPipeToolResult[] = [];
-        try {
-          for (let step = 0; step < 5; step += 1) {
-            const prompt = buildMediaPipePrompt(
-              this.snapshot.games,
-              this.snapshot.currentGame,
-              messages,
-              toolResults,
-              'tool',
-            );
-            
-            this.snapshot.updateStatus('Thinking...');
-
-            const decisionText = await this.generateWithMediaPipe(prompt, false);
-            const decision = parseMediaPipeToolRequest(decisionText);
-
-            if ('response' in decision) {
-              this.snapshot.updateStatus('');
-              writer.write({ type: 'text-start', id: textId });
-              writer.write({ type: 'text-delta', id: textId, delta: decision.response });
-              writer.write({ type: 'text-end', id: textId });
-              writer.write({ type: 'finish-step' });
-              writer.write({ type: 'finish', finishReason: 'stop' });
-              return;
-            }
-            const toolResult = await executeMediaPipeTool(decision, this.snapshot);
-            toolResults.push(toolResult);
-
-            writer.write({ type: 'text-start', id: `tool-${step}` });
-            writer.write({ type: 'text-delta', id: `tool-${step}`, delta: `\n> ${toolResult.message}\n` });
-            writer.write({ type: 'text-end', id: `tool-${step}` });
-
-            if (!toolResult.success) {
-              this.snapshot.updateStatus('');
-              break;
-            }
-          }
-
-          this.snapshot.updateStatus('Generating response...');
-          const finalPrompt = buildMediaPipePrompt(
-            this.snapshot.games,
-            this.snapshot.currentGame,
-            messages,
-            toolResults,
-            'final',
-          );
-          
-          writer.write({ type: 'text-start', id: textId });
-          await this.generateWithMediaPipe(finalPrompt, true, writer, textId);
-          
-          // Ensure the final full text is written in case streaming missed the last chunk
-          // or if we want to ensure consistency. 
-          // UIMessageStreamWriter handles duplicate deltas if IDs match, but here 
-          // we are providing the full text at the end of the stream for that part.
-          // Actually, createUIMessageStream's writer doesn't have a 'set-text' so we rely on deltas.
-          
-          writer.write({ type: 'text-end', id: textId });
-          writer.write({ type: 'finish-step' });
-          writer.write({ type: 'finish', finishReason: 'stop' });
-        } catch (err) {
-          writer.write({
-            type: 'error',
-            errorText: err instanceof Error ? err.message : 'MediaPipe generation failed.',
-          });
-        } finally {
-          this.snapshot.updateStatus('');
-          this.snapshot.hideDialog();
-          this.currentAbortSignal = undefined;
-        }
-      },
-    });
-  }
-
-  private async generateWithOllama(
-    messages: OllamaMessage[],
-    stream: boolean,
-    writer?: UIMessageStreamWriter<UIMessage>,
-    textPartId?: string,
-    abortSignal?: AbortSignal,
-  ): Promise<string> {
-    const url = `${normalizeOllamaUrl(this.snapshot.ollamaUrl)}/api/chat`;
-    const model = this.snapshot.ollamaModel.trim();
-    if (!model) throw new Error('Enter an Ollama model name in Settings.');
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages,
-        stream,
-        options: {
-          temperature: 0.3,
-          num_predict: stream ? MEDIAPIPE_FINAL_RESPONSE_MAX_TOKENS : MEDIAPIPE_TOOL_DECISION_MAX_TOKENS,
-        },
-      }),
-      signal: abortSignal,
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Ollama request failed with ${response.status}.`);
-    }
-
-    if (!stream) {
-      const result = parseOllamaChatResponse(await response.json());
-      if (result.error) throw new Error(result.error);
-      return result.message?.content ?? '';
-    }
-
-    if (!response.body) throw new Error('Ollama did not return a response body.');
-
-    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-    const outputId = textPartId ?? crypto.randomUUID();
-    let buffer = '';
-    let fullText = '';
-
-    try {
-      while (true) {
-        const readResult = await reader.read();
-        if (readResult.done) break;
-        buffer += readResult.value;
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          const chunk = parseOllamaChatResponse(JSON.parse(trimmed) as unknown);
-          if (chunk.error) throw new Error(chunk.error);
-          const delta = chunk.message?.content ?? '';
-          if (!delta) continue;
-          fullText += delta;
-          writer?.write({ type: 'text-delta', id: outputId, delta });
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-
-    return fullText;
-  }
-
-  private async sendOllamaMessages(
-    messages: UIMessage[],
-    abortSignal: AbortSignal | undefined,
-  ): Promise<ReadableStream<UIMessageChunk>> {
-    return createUIMessageStream({
-      execute: async ({ writer }) => {
-        const textId = crypto.randomUUID();
-        writer.write({ type: 'start' });
-        writer.write({ type: 'start-step' });
-
-        const toolResults: MediaPipeToolResult[] = [];
-        try {
-          for (let step = 0; step < 5; step += 1) {
-            this.snapshot.updateStatus('Thinking...');
-            const decisionMessages = buildOllamaMessages(
-              this.snapshot.games,
-              this.snapshot.currentGame,
-              messages,
-              toolResults,
-              'tool',
-            );
-            const decisionText = await this.generateWithOllama(decisionMessages, false, undefined, undefined, abortSignal);
-            const decision = parseMediaPipeToolRequest(decisionText);
-
-            if ('response' in decision) {
-              this.snapshot.updateStatus('');
-              writer.write({ type: 'text-start', id: textId });
-              writer.write({ type: 'text-delta', id: textId, delta: decision.response });
-              writer.write({ type: 'text-end', id: textId });
-              writer.write({ type: 'finish-step' });
-              writer.write({ type: 'finish', finishReason: 'stop' });
-              return;
-            }
-
-            const toolResult = await executeMediaPipeTool(decision, this.snapshot);
-            toolResults.push(toolResult);
-
-            writer.write({ type: 'text-start', id: `tool-${step}` });
-            writer.write({ type: 'text-delta', id: `tool-${step}`, delta: `\n> ${toolResult.message}\n` });
-            writer.write({ type: 'text-end', id: `tool-${step}` });
-
-            if (!toolResult.success) {
-              this.snapshot.updateStatus('');
-              break;
-            }
-          }
-
-          this.snapshot.updateStatus('Generating response...');
-          writer.write({ type: 'text-start', id: textId });
-          const finalMessages = buildOllamaMessages(
-            this.snapshot.games,
-            this.snapshot.currentGame,
-            messages,
-            toolResults,
-            'final',
-          );
-          await this.generateWithOllama(finalMessages, true, writer, textId, abortSignal);
-          writer.write({ type: 'text-end', id: textId });
-          writer.write({ type: 'finish-step' });
-          writer.write({ type: 'finish', finishReason: 'stop' });
-        } catch (err) {
-          writer.write({
-            type: 'error',
-            errorText:
-              err instanceof Error
-                ? err.message
-                : 'Ollama generation failed. Check that the local server is running and accessible.',
-          });
-        } finally {
-          this.snapshot.updateStatus('');
-          this.snapshot.hideDialog();
-        }
-      },
-    });
-  }
-
-  async sendMessages({
-    messages,
-    abortSignal,
-  }: Parameters<ChatTransport<UIMessage>['sendMessages']>[0]): Promise<ReadableStream<UIMessageChunk>> {
-    if (this.snapshot.backend === 'mediapipe') {
-      return this.sendMediaPipeMessages(messages, abortSignal);
-    }
+  private async createModel(): Promise<LanguageModel | null> {
     if (this.snapshot.backend === 'ollama') {
-      return this.sendOllamaMessages(messages, abortSignal);
+      const model = this.snapshot.ollamaModel.trim();
+      if (!model) throw new Error('Enter an Ollama model name in Settings.');
+      return createOllama({ baseURL: normalizeOllamaUrl(this.snapshot.ollamaUrl) })(model);
     }
 
-    const { modelId, games, currentGame, tools, updateStatus, hideDialog } = this.snapshot;
-    const confirmed = await this.confirmDownloadIfNeeded(modelId);
+    const confirmed = await this.confirmDownloadIfNeeded(this.snapshot.modelId);
+    if (!confirmed) return null;
 
-    if (!confirmed) {
-      return new ReadableStream<UIMessageChunk>({
-        start(controller) {
-          controller.close();
-        },
-      });
-    }
-
-    const model = transformersJS(modelId, {
+    return transformersJS(this.snapshot.modelId, {
       worker: this.getWorker(),
       device: 'auto',
       initProgressCallback: (progress) => {
-        updateStatus('Loading model...', progress);
+        this.snapshot.updateStatus('Loading model...', progress);
       },
     });
+  }
 
-    const modelMessages = await convertToModelMessages(messages);
+  async sendMessages(
+    options: Parameters<ChatTransport<UIMessage>['sendMessages']>[0],
+  ): Promise<ReadableStream<UIMessageChunk>> {
+    try {
+      const model = await this.createModel();
 
-    const result = streamText({
-      model,
-      system: buildSystemPrompt(games, currentGame),
-      messages: modelMessages,
-      tools,
-      stopWhen: stepCountIs(5),
-      abortSignal,
-      maxOutputTokens: 512,
-      temperature: 0.3,
-      providerOptions: {
-        'transformers-js': {
-          maxNewTokens: 512,
+      if (!model) {
+        return new ReadableStream<UIMessageChunk>({
+          start(controller) {
+            controller.close();
+          },
+        });
+      }
+
+      const agent = new ToolLoopAgent({
+        model,
+        instructions: buildSystemPrompt(this.snapshot.games, this.snapshot.currentGame),
+        tools: this.snapshot.tools,
+        stopWhen: isStepCount(5),
+        maxOutputTokens: 512,
+        temperature: 0.3,
+        providerOptions:
+          this.snapshot.backend === 'transformers'
+            ? {
+                'transformers-js': {
+                  maxNewTokens: 512,
+                },
+              }
+            : undefined,
+        onEnd: () => {
+          this.snapshot.hideDialog();
+          this.snapshot.updateStatus('');
         },
-      },
-      onFinish: () => {
-        hideDialog();
-      },
-      onError: () => {
-        updateStatus('error');
-      },
-    });
+      });
 
-    return result.toUIMessageStream();
+      const transport = new DirectChatTransport({ agent }) as ChatTransport<UIMessage>;
+      return transport.sendMessages(options);
+    } catch (err) {
+      this.snapshot.updateStatus('error');
+      throw err;
+    }
   }
 
   async reconnectToStream(): Promise<ReadableStream<UIMessageChunk> | null> {
@@ -850,7 +207,7 @@ export function useChat() {
     [currentGameId, games],
   );
 
-  const store = useMemo(
+  const store: ToolStore = useMemo(
     () => ({ addRound, updateRound, undoLastRound, updatePlayer, createGame }),
     [addRound, updateRound, undoLastRound, updatePlayer, createGame],
   );
@@ -875,7 +232,7 @@ export function useChat() {
 
   const [transport] = useState(
     () =>
-      new BrowserLLMTransport({
+      new BrowserAgentTransport({
         backend: llmBackend,
         modelId: llmModel,
         ollamaUrl,
@@ -883,8 +240,6 @@ export function useChat() {
         games,
         currentGame,
         tools,
-        store,
-        navigate,
         showDialog,
         hideDialog,
         updateStatus,
@@ -900,8 +255,6 @@ export function useChat() {
       games,
       currentGame,
       tools,
-      store,
-      navigate,
       showDialog,
       hideDialog,
       updateStatus,
@@ -914,9 +267,7 @@ export function useChat() {
     llmModel,
     ollamaModel,
     ollamaUrl,
-    navigate,
     showDialog,
-    store,
     tools,
     transport,
     updateStatus,

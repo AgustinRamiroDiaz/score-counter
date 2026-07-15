@@ -4,7 +4,7 @@ export interface ModelPreset {
   description: string;
   size: string;
   sizeBytes: number;
-  backend?: "transformers" | "mediapipe" | "ollama";
+  backend?: "transformers" | "ollama";
 }
 
 export const LLM_MODELS: ModelPreset[] = [
@@ -57,15 +57,6 @@ export const LLM_MODELS: ModelPreset[] = [
     size: "~2.3 GB",
     sizeBytes: 2_300_000_000,
     backend: "transformers",
-  },
-  {
-    id: "mediapipe-local-gemma",
-    label: "Local Gemma Web model",
-    description:
-      "Use a local Web-compatible Gemma .litertlm or .task file. Requires WebGPU.",
-    size: "Local file",
-    sizeBytes: 0,
-    backend: "mediapipe",
   },
   {
     id: "ollama-local",

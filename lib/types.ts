@@ -24,17 +24,9 @@ export interface AppSettings {
   llmBackend: LLMBackend;
   ollamaUrl: string;
   ollamaModel: string;
-  mediapipeModel?: MediaPipeModelMetadata;
 }
 
-export type LLMBackend = "transformers" | "mediapipe" | "ollama";
-
-export interface MediaPipeModelMetadata {
-  name: string;
-  size: number;
-  lastModified: number;
-  handleAvailable: boolean;
-}
+export type LLMBackend = "transformers" | "ollama";
 
 export interface GameSummary {
   id: string;

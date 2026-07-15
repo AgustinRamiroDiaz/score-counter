@@ -1,22 +1,16 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSettingsStore } from '@/lib/store/settingsStore';
 import { LLM_MODELS, STT_MODELS, getModelPreset, isModelCached } from '@/lib/config/models';
 import { useLLM } from '@/lib/ai/useLLM';
 import { useSTT } from '@/lib/ai/useSTT';
-import {
-  chooseMediaPipeModelFile,
-  isMediaPipeModelFile,
-  saveFallbackMediaPipeFile,
-  supportsFileSystemModelPicker,
-} from '@/lib/ai/mediapipeModelFile';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Bot, Mic, HardDrive, Info, CheckCircle2, Download, Upload, Server } from 'lucide-react';
+import { ArrowLeft, Bot, Mic, HardDrive, Info, CheckCircle2, Download, Server } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -34,21 +28,17 @@ export default function SettingsPage() {
     llmBackend,
     ollamaUrl,
     ollamaModel,
-    mediapipeModel,
     setSTTModel,
     setLLMModel,
     setLLMBackend,
     setOllamaUrl,
     setOllamaModel,
-    setMediaPipeModel,
   } = useSettingsStore();
   const { load: loadLLM } = useLLM();
   const { load: loadSTT } = useSTT();
-  const fallbackInputRef = useRef<HTMLInputElement>(null);
 
   const [cachedModels, setCachedModels] = useState<Record<string, boolean>>({});
-  const [mediaPipeError, setMediaPipeError] = useState<string | null>(null);
-  const transformersModels = useMemo(() => LLM_MODELS.filter((m) => m.backend !== 'mediapipe'), []);
+  const transformersModels = useMemo(() => LLM_MODELS.filter((m) => m.backend === 'transformers'), []);
 
   const refreshCacheStatus = useCallback(async () => {
     const status: Record<string, boolean> = {};
@@ -85,7 +75,7 @@ export default function SettingsPage() {
   }, [transformersModels]);
 
   useEffect(() => {
-    if (llmBackend === 'transformers' && !transformersModels.some((m) => m.id === llmModel)) {
+    if (llmBackend !== 'ollama' && !transformersModels.some((m) => m.id === llmModel)) {
       setLLMModel(transformersModels[0]?.id ?? llmModel);
     }
   }, [llmBackend, llmModel, setLLMModel, transformersModels]);
@@ -95,48 +85,6 @@ export default function SettingsPage() {
 
   const isLLMCached = cachedModels[llmModel];
   const isSTTCached = cachedModels[sttModel];
-  const canRememberMediaPipeFile = supportsFileSystemModelPicker();
-
-  const selectMediaPipeFile = useCallback(async () => {
-    setMediaPipeError(null);
-    if (!canRememberMediaPipeFile) {
-      fallbackInputRef.current?.click();
-      return;
-    }
-
-    try {
-      const { metadata } = await chooseMediaPipeModelFile();
-      setMediaPipeModel(metadata);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      setMediaPipeError(err instanceof Error ? err.message : 'Could not select the model file.');
-    }
-  }, [canRememberMediaPipeFile, setMediaPipeModel]);
-
-  const onFallbackFileChange = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
-      setMediaPipeError(null);
-      const file = event.target.files?.[0];
-      event.target.value = '';
-      if (!file) return;
-
-      if (!isMediaPipeModelFile(file)) {
-        setMediaPipeError('Select a Web-compatible Gemma .litertlm or .task file.');
-        return;
-      }
-
-      const metadata = await saveFallbackMediaPipeFile(file);
-      setMediaPipeModel(metadata);
-    },
-    [setMediaPipeModel],
-  );
-
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-    return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
-  };
 
   return (
     <div className="min-h-dvh flex flex-col max-w-lg mx-auto">
@@ -161,7 +109,7 @@ export default function SettingsPage() {
             <Select
               value={llmBackend}
               onValueChange={(v: string | null) => {
-                if (v === 'mediapipe' || v === 'ollama' || v === 'transformers') setLLMBackend(v);
+                if (v === 'ollama' || v === 'transformers') setLLMBackend(v);
               }}
             >
               <SelectTrigger id="llm-backend" className="h-11 bg-secondary border-transparent">
@@ -169,7 +117,6 @@ export default function SettingsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="transformers">Transformers.js</SelectItem>
-                <SelectItem value="mediapipe">MediaPipe</SelectItem>
                 <SelectItem value="ollama">Ollama</SelectItem>
               </SelectContent>
             </Select>
@@ -230,52 +177,6 @@ export default function SettingsPage() {
                   )}
                 </div>
               </div>
-            </div>
-          ) : llmBackend === 'mediapipe' ? (
-            <div className="flex flex-col gap-3">
-              <Label className="flex items-center gap-2">
-                <HardDrive className="h-3.5 w-3.5 text-ai" />
-                Local Gemma Model
-              </Label>
-              <input
-                ref={fallbackInputRef}
-                type="file"
-                accept=".litertlm,.task"
-                className="hidden"
-                onChange={onFallbackFileChange}
-              />
-              <div className="rounded-xl bg-secondary/50 p-3 flex flex-col gap-3">
-                {mediapipeModel ? (
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{mediapipeModel.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatBytes(mediapipeModel.size)} ·{' '}
-                        {mediapipeModel.handleAvailable ? 'Remembered file handle' : 'Reselect after refresh'}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="text-green-600 bg-green-50 border-green-200 gap-1 py-1 shrink-0">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Selected
-                    </Badge>
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Select a Web-compatible Gemma <span className="font-medium">.litertlm</span> or{' '}
-                    <span className="font-medium">.task</span> file. The file stays on this device.
-                  </p>
-                )}
-                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs self-start" onClick={selectMediaPipeFile}>
-                  <Upload className="h-3 w-3" />
-                  {mediapipeModel ? 'Change File' : 'Select File'}
-                </Button>
-                {mediaPipeError && <p className="text-xs text-destructive">{mediaPipeError}</p>}
-              </div>
-              <p className="text-xs text-muted-foreground flex items-start gap-1.5">
-                <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                MediaPipe runs local Gemma models with WebGPU. Chromium can remember the file handle;
-                other browsers may ask you to reselect the file.
-              </p>
             </div>
           ) : (
             <div className="flex flex-col gap-3">
@@ -367,9 +268,8 @@ export default function SettingsPage() {
           </div>
 
           <div className="text-xs text-muted-foreground bg-secondary/50 rounded-xl p-3 leading-relaxed mt-2">
-            Transformers models download on first use and cache in your browser. MediaPipe models
-            are selected from your local filesystem. Ollama requests go directly from this browser
-            to your configured local server.
+            Transformers models download on first use and cache in your browser. Ollama requests go
+            directly from this browser to your configured local server.
           </div>
         </div>
       </main>
