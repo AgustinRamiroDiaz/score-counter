@@ -1,11 +1,20 @@
-'use client';
+"use client";
 
-import { useState, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { useGameStore } from '@/lib/store/gameStore';
-import { RoundChart } from '@/components/views/RoundChart';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { useGameStore } from "@/lib/store/gameStore";
+import { RoundChart } from "@/components/views/RoundChart";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -13,15 +22,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Check, Trash2, Undo2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import type { Player, Round } from '@/lib/types';
+} from "@/components/ui/table";
+import { Check, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { Player, Round } from "@/lib/types";
 
 function buildEmptyScores(players: Player[]) {
   const scores: Record<string, string> = {};
   for (const player of players) {
-    scores[player.id] = '';
+    scores[player.id] = "";
   }
   return scores;
 }
@@ -35,7 +44,7 @@ function buildRoundScores(players: Player[], round: Round) {
 }
 
 function areScoresComplete(players: Player[], scores: Record<string, string>) {
-  return players.every((player) => scores[player.id]?.trim() !== '');
+  return players.every((player) => scores[player.id]?.trim() !== "");
 }
 
 function areScoresValid(players: Player[], scores: Record<string, string>) {
@@ -67,12 +76,17 @@ export default function ScoringPage() {
 
 function ScoringPageContent() {
   const searchParams = useSearchParams();
-  const id = searchParams.get('id');
-  const game = useGameStore((s) => s.games.find((candidate) => candidate.id === id));
-  const { addRound, updateRound, deleteRound, undoLastRound } = useGameStore();
+  const id = searchParams.get("id");
+  const game = useGameStore((s) =>
+    s.games.find((candidate) => candidate.id === id),
+  );
+  const { addRound, updateRound, deleteRound } = useGameStore();
   const [editingRoundId, setEditingRoundId] = useState<string | null>(null);
   const [editScores, setEditScores] = useState<Record<string, string>>({});
   const [draftScores, setDraftScores] = useState<Record<string, string>>({});
+  const [pendingDeleteRound, setPendingDeleteRound] = useState<Round | null>(
+    null,
+  );
 
   if (!game || !id) return null;
 
@@ -111,6 +125,7 @@ function ScoringPageContent() {
     deleteRound(id, roundId);
     setEditingRoundId(null);
     setEditScores({});
+    setPendingDeleteRound(null);
   };
 
   return (
@@ -120,21 +135,10 @@ function ScoringPageContent() {
       </div>
 
       <div className="px-4 pt-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="mb-3">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Round history
           </p>
-          {game.rounds.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1.5 text-muted-foreground h-7 text-xs"
-              onClick={() => undoLastRound(id)}
-            >
-              <Undo2 className="h-3 w-3" />
-              Undo last
-            </Button>
-          )}
         </div>
 
         <div className="rounded-xl border border-border bg-card">
@@ -160,7 +164,6 @@ function ScoringPageContent() {
                     onClick={handleDraftSave}
                   >
                     <Check className="h-3.5 w-3.5" />
-                    Save
                   </Button>
                 </TableCell>
                 {game.players.map((player) => (
@@ -170,7 +173,7 @@ function ScoringPageContent() {
                       inputMode="numeric"
                       aria-label={`${player.name} score for round ${nextRoundNumber}`}
                       placeholder="0"
-                      value={draftScores[player.id] ?? ''}
+                      value={draftScores[player.id] ?? ""}
                       onChange={(event) =>
                         setDraftScores((current) => ({
                           ...current,
@@ -190,8 +193,8 @@ function ScoringPageContent() {
                   <TableRow
                     key={round.id}
                     className={cn(
-                      'cursor-pointer',
-                      isEditing && 'bg-muted/60 hover:bg-muted/60',
+                      "cursor-pointer",
+                      isEditing && "bg-muted/60 hover:bg-muted/60",
                     )}
                     onClick={() => handleEditStart(round)}
                   >
@@ -217,7 +220,7 @@ function ScoringPageContent() {
                             aria-label={`Delete round ${round.number}`}
                             onClick={(event) => {
                               event.stopPropagation();
-                              handleRoundDelete(round.id);
+                              setPendingDeleteRound(round);
                             }}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -236,9 +239,9 @@ function ScoringPageContent() {
                         <TableCell
                           key={player.id}
                           className={cn(
-                            'font-semibold tabular-nums',
-                            !isEditing && score > 0 && 'text-primary/90',
-                            !isEditing && score < 0 && 'text-destructive',
+                            "font-semibold tabular-nums",
+                            !isEditing && score > 0 && "text-primary/90",
+                            !isEditing && score < 0 && "text-destructive",
                           )}
                         >
                           {isEditing ? (
@@ -246,7 +249,7 @@ function ScoringPageContent() {
                               type="number"
                               inputMode="numeric"
                               aria-label={`${player.name} score for round ${round.number}`}
-                              value={editScores[player.id] ?? ''}
+                              value={editScores[player.id] ?? ""}
                               onClick={(event) => event.stopPropagation()}
                               onChange={(event) =>
                                 setEditScores((current) => ({
@@ -269,6 +272,40 @@ function ScoringPageContent() {
           </Table>
         </div>
       </div>
+
+      <Dialog
+        open={pendingDeleteRound !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteRound(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete round?</DialogTitle>
+            <DialogDescription>
+              {pendingDeleteRound
+                ? `Round ${pendingDeleteRound.number} will be removed from this game.`
+                : "This round will be removed from this game."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button type="button" variant="outline" />}>
+              Cancel
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                if (pendingDeleteRound) {
+                  handleRoundDelete(pendingDeleteRound.id);
+                }
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
