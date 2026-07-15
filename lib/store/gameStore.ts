@@ -41,7 +41,7 @@ export const useGameStore = create<GameState>()(
           players: players.map((p) => ({ ...p, id: newId() })),
           rounds: [],
         };
-        set((s) => ({ games: [...s.games, newGame] }));
+        set((s) => ({ games: [...s.games, newGame], activeGameId: id }));
         return id;
       },
 

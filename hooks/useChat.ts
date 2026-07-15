@@ -54,7 +54,7 @@ function buildSystemPrompt(games: Game[], currentGame: Game | undefined): string
 Existing games:
 ${gameList}
 
-Use the available tools to create games when the user asks. Collect a game name and at least two player names before creating a game.
+Use the available tools to create games, list games, select an existing game, or inspect the current game when the user asks. Collect a game name and at least two player names before creating a game.
 
 If no tool is needed, respond conversationally in one or two concise sentences.`;
   }
@@ -68,9 +68,10 @@ If no tool is needed, respond conversationally in one or two concise sentences.`
 Players:
 ${playerList || '  (none)'}
 
+Selected game id: ${currentGame.id}
 Rounds played: ${currentGame.rounds.length}
 
-Use the available tools to score rounds, correct rounds, undo the last round, inspect the leaderboard, update players, create games, or navigate views.
+Use the available tools to score rounds, correct rounds, undo the last round, inspect the leaderboard, update players, fetch current game details, select games, create games, or navigate views.
 
 IMPORTANT for add_round: include a score for every player. If any score is missing, ask before calling the tool.
 
@@ -189,6 +190,7 @@ class BrowserAgentTransport implements ChatTransport<UIMessage> {
 export function useChat() {
   const router = useRouter();
   const games = useGameStore((s) => s.games);
+  const activeGameId = useGameStore((s) => s.activeGameId);
   const llmModel = useSettingsStore((s) => s.llmModel);
   const llmBackend = useSettingsStore((s) => s.llmBackend);
   const ollamaUrl = useSettingsStore((s) => s.ollamaUrl);
@@ -199,35 +201,56 @@ export function useChat() {
   const undoLastRound = useGameStore((s) => s.undoLastRound);
   const updatePlayer = useGameStore((s) => s.updatePlayer);
   const createGame = useGameStore((s) => s.createGame);
+  const setActiveGame = useGameStore((s) => s.setActiveGame);
+  const getGame = useGameStore((s) => s.getGame);
 
   const searchParams = useSearchParams();
-  const currentGameId = searchParams.get('id') || undefined;
+  const routeGameId = searchParams.get('id') || undefined;
+  const currentGameId = routeGameId ?? activeGameId ?? undefined;
   const currentGame = useMemo(
     () => (currentGameId ? games.find((g) => g.id === currentGameId) : undefined),
     [currentGameId, games],
   );
 
+  useEffect(() => {
+    if (routeGameId && routeGameId !== activeGameId && games.some((game) => game.id === routeGameId)) {
+      setActiveGame(routeGameId);
+    }
+  }, [activeGameId, games, routeGameId, setActiveGame]);
+
   const store: ToolStore = useMemo(
-    () => ({ addRound, updateRound, undoLastRound, updatePlayer, createGame }),
-    [addRound, updateRound, undoLastRound, updatePlayer, createGame],
+    () => ({
+      getGames: () => useGameStore.getState().games,
+      getGame,
+      getActiveGameId: () => useGameStore.getState().activeGameId,
+      setActiveGame,
+      addRound,
+      updateRound,
+      undoLastRound,
+      updatePlayer,
+      createGame,
+    }),
+    [addRound, createGame, getGame, setActiveGame, undoLastRound, updatePlayer, updateRound],
   );
 
   const navigate = useMemo(
     () => (view: string, gameId?: string) => {
       const targetId = gameId ?? currentGameId;
       if (targetId) {
+        setActiveGame(targetId);
         const path = view === 'scoring' ? '/game' : `/game/${view}`;
         router.push(`${path}?id=${targetId}`);
       } else {
+        setActiveGame(null);
         router.push('/');
       }
     },
-    [currentGameId, router],
+    [currentGameId, router, setActiveGame],
   );
 
   const tools = useMemo(
-    () => createTools(currentGame, store, navigate),
-    [currentGame, navigate, store],
+    () => createTools(currentGameId, store, navigate),
+    [currentGameId, navigate, store],
   );
 
   const [transport] = useState(
