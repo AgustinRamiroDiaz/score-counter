@@ -10,13 +10,14 @@ import {
   isModelCached,
   normalizeSTTModelId,
 } from '@/lib/config/models';
+import { fetchOllamaModels } from '@/lib/ai/ollama';
 import { useLLM } from '@/lib/ai/useLLM';
 import { useSTT } from '@/lib/ai/useSTT';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Bot, Mic, HardDrive, Info, CheckCircle2, Download, Server } from 'lucide-react';
+import { ArrowLeft, Bot, Mic, HardDrive, Info, CheckCircle2, Download, Server, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -25,6 +26,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import type { OllamaModelTag } from '@/lib/ai/ollama';
+
+function formatBytes(bytes: number | undefined) {
+  if (bytes === undefined) return null;
+
+  const gib = bytes / 1024 ** 3;
+  if (gib >= 1) return `${gib.toFixed(1)} GB`;
+
+  const mib = bytes / 1024 ** 2;
+  return `${mib.toFixed(0)} MB`;
+}
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -44,8 +56,18 @@ export default function SettingsPage() {
   const { load: loadSTT } = useSTT();
 
   const [cachedModels, setCachedModels] = useState<Record<string, boolean>>({});
+  const [ollamaModels, setOllamaModels] = useState<OllamaModelTag[]>([]);
+  const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false);
+  const [ollamaModelsError, setOllamaModelsError] = useState<string | null>(null);
   const transformersModels = useMemo(() => LLM_MODELS.filter((m) => m.backend === 'transformers'), []);
   const resolvedSTTModel = normalizeSTTModelId(sttModel);
+  const ollamaModelOptions = useMemo(() => {
+    if (!ollamaModel.trim() || ollamaModels.some((model) => model.name === ollamaModel)) {
+      return ollamaModels;
+    }
+
+    return [{ name: ollamaModel }, ...ollamaModels];
+  }, [ollamaModel, ollamaModels]);
 
   const refreshCacheStatus = useCallback(async () => {
     const status: Record<string, boolean> = {};
@@ -57,6 +79,26 @@ export default function SettingsPage() {
     );
     setCachedModels(status);
   }, [transformersModels]);
+
+  const refreshOllamaModels = useCallback(async () => {
+    setOllamaModelsLoading(true);
+    setOllamaModelsError(null);
+
+    try {
+      const result = await fetchOllamaModels(ollamaUrl);
+      setOllamaModels(result.models);
+
+      const currentModel = useSettingsStore.getState().ollamaModel;
+      if (result.models.length > 0 && !result.models.some((model) => model.name === currentModel)) {
+        setOllamaModel(result.models[0].name);
+      }
+    } catch (error) {
+      setOllamaModels([]);
+      setOllamaModelsError(error instanceof Error ? error.message : 'Could not fetch Ollama models.');
+    } finally {
+      setOllamaModelsLoading(false);
+    }
+  }, [ollamaUrl, setOllamaModel]);
 
   useEffect(() => {
     let mounted = true;
@@ -86,6 +128,16 @@ export default function SettingsPage() {
       setLLMModel(transformersModels[0]?.id ?? llmModel);
     }
   }, [llmBackend, llmModel, setLLMModel, transformersModels]);
+
+  useEffect(() => {
+    if (llmBackend !== 'ollama') return;
+
+    const timer = window.setTimeout(() => {
+      refreshOllamaModels();
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [llmBackend, refreshOllamaModels]);
 
   useEffect(() => {
     if (resolvedSTTModel !== sttModel) {
@@ -208,13 +260,61 @@ export default function SettingsPage() {
                 <Bot className="h-3.5 w-3.5 text-ai" />
                 Ollama Model
               </Label>
+              {ollamaModelOptions.length > 0 && (
+                <Select value={ollamaModel} onValueChange={(value: string | null) => value && setOllamaModel(value)}>
+                  <SelectTrigger id="ollama-model" className="h-11 bg-secondary border-transparent">
+                    <SelectValue placeholder="Select a model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ollamaModelOptions.map((model) => {
+                      const size = formatBytes(model.size);
+                      const detail = [model.parameterSize, model.quantizationLevel].filter(Boolean).join(' ');
+
+                      return (
+                        <SelectItem key={model.name} value={model.name}>
+                          <div className="flex items-center justify-between w-full gap-4">
+                            <span>{model.name}</span>
+                            {(detail || size) && (
+                              <span className="text-xs text-muted-foreground">
+                                {[detail, size].filter(Boolean).join(' · ')}
+                              </span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              )}
               <Input
-                id="ollama-model"
+                id="ollama-model-custom"
                 value={ollamaModel}
                 onChange={(event) => setOllamaModel(event.target.value)}
-                placeholder="llama3.2"
+                placeholder={ollamaModelOptions.length > 0 ? 'Custom model name' : 'llama3.2'}
                 className="h-11 bg-secondary border-transparent"
               />
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  {ollamaModelsLoading
+                    ? 'Fetching models from /api/tags...'
+                    : ollamaModelsError
+                      ? `Could not fetch models: ${ollamaModelsError}`
+                      : ollamaModels.length > 0
+                        ? `${ollamaModels.length} local models found.`
+                        : 'No Ollama models found yet.'}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs shrink-0"
+                  disabled={ollamaModelsLoading}
+                  onClick={refreshOllamaModels}
+                >
+                  <RefreshCw className={ollamaModelsLoading ? 'h-3 w-3 animate-spin' : 'h-3 w-3'} />
+                  Refresh
+                </Button>
+              </div>
               <p className="text-xs text-muted-foreground flex items-start gap-1.5">
                 <Info className="h-3 w-3 mt-0.5 shrink-0" />
                 Start Ollama locally and pull the model first, for example: ollama pull {ollamaModel || 'llama3.2'}.

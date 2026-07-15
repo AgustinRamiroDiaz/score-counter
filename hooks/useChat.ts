@@ -10,6 +10,7 @@ import { useGameStore } from '@/lib/store/gameStore';
 import { useModelDownloadStore } from '@/lib/store/modelDownloadStore';
 import { useSettingsStore } from '@/lib/store/settingsStore';
 import { createTools } from '@/lib/ai/tools';
+import { normalizeOllamaUrl } from '@/lib/ai/ollama';
 import { isModelCached } from '@/lib/config/models';
 import type { Game, GameSummary, LLMBackend } from '@/lib/types';
 import type { ChatTransport, LanguageModel, ToolSet, UIMessage, UIMessageChunk } from 'ai';
@@ -76,11 +77,6 @@ Use the available tools to score rounds, correct rounds, undo the last round, in
 IMPORTANT for add_round: include a score for every player. If any score is missing, ask before calling the tool.
 
 If no tool is needed, respond conversationally in one or two concise sentences.`;
-}
-
-function normalizeOllamaUrl(url: string): string {
-  const trimmed = url.trim().replace(/\/+$/, '');
-  return trimmed.length > 0 ? trimmed : 'http://localhost:11434';
 }
 
 class BrowserAgentTransport implements ChatTransport<UIMessage> {
